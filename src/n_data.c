@@ -248,6 +248,21 @@ void nexus_data_array_get(const NexusDataArray *array, uint_large index, void *o
   nexus_memory_bytes_copy(nexus_data_array_at_const(array, index), out_element, array->element_size);
 }
 
+void nexus_data_array_set_pointer(NexusDataArray *array, uint_large index, const void *pointer) {
+  NEXUS_PROGRAM_PRECONDITION(array != NULL, "data_array_set_pointer: array is NULL");
+  NEXUS_PROGRAM_PRECONDITION(array->element_size == NEXUS_SIZEOF(void *), "data_array_set_pointer: element_size is not pointer-sized");
+  nexus_data_array_set(array, index, (const void *)&pointer);
+}
+
+void *nexus_data_array_pointer_at(const NexusDataArray *array, uint_large index) {
+  void *pointer;
+
+  NEXUS_PROGRAM_PRECONDITION(array != NULL, "data_array_pointer_at: array is NULL");
+  NEXUS_PROGRAM_PRECONDITION(array->element_size == NEXUS_SIZEOF(void *), "data_array_pointer_at: element_size is not pointer-sized");
+  nexus_data_array_get(array, index, (void *)&pointer);
+  return pointer;
+}
+
 void nexus_data_array_reverse(NexusDataArray *array) {
   uint_large left;
   uint_large right;
@@ -760,6 +775,24 @@ boolean nexus_data_list_pop(NexusDataList *list, void *out_element) {
   return TRUE;
 }
 
+void nexus_data_list_insert_pointer(NexusDataList *list, uint_large index, const void *pointer) {
+  NEXUS_PROGRAM_PRECONDITION(list != NULL, "data_list_insert_pointer: list is NULL");
+  NEXUS_PROGRAM_PRECONDITION(list->buffer.element_size == NEXUS_SIZEOF(void *), "data_list_insert_pointer: element_size is not pointer-sized");
+  nexus_data_list_insert(list, index, (const void *)&pointer);
+}
+
+void nexus_data_list_remove_pointer(NexusDataList *list, uint_large index, void **out_pointer) {
+  NEXUS_PROGRAM_PRECONDITION(list != NULL, "data_list_remove_pointer: list is NULL");
+  NEXUS_PROGRAM_PRECONDITION(list->buffer.element_size == NEXUS_SIZEOF(void *), "data_list_remove_pointer: element_size is not pointer-sized");
+  nexus_data_list_remove(list, index, (void *)out_pointer);
+}
+
+boolean nexus_data_list_pop_pointer(NexusDataList *list, void **out_pointer) {
+  NEXUS_PROGRAM_PRECONDITION(list != NULL, "data_list_pop_pointer: list is NULL");
+  NEXUS_PROGRAM_PRECONDITION(list->buffer.element_size == NEXUS_SIZEOF(void *), "data_list_pop_pointer: element_size is not pointer-sized");
+  return nexus_data_list_pop(list, (void *)out_pointer);
+}
+
 void nexus_data_list_clear(NexusDataList *list) {
   NEXUS_PROGRAM_PRECONDITION(list != NULL, "data_list_clear: list is NULL");
   list->buffer.length = 0;
@@ -927,6 +960,32 @@ void *nexus_data_stack_peek(NexusDataStack *stack) {
   return n_data_buffer_at(&stack->buffer, stack->buffer.length - 1U);
 }
 
+void *nexus_data_stack_push_pointer(NexusDataStack *stack, const void *pointer) {
+  NEXUS_PROGRAM_PRECONDITION(stack != NULL, "data_stack_push_pointer: stack is NULL");
+  NEXUS_PROGRAM_PRECONDITION(stack->buffer.element_size == NEXUS_SIZEOF(void *), "data_stack_push_pointer: element_size is not pointer-sized");
+  return nexus_data_stack_push(stack, (const void *)&pointer);
+}
+
+boolean nexus_data_stack_pop_pointer(NexusDataStack *stack, void **out_pointer) {
+  NEXUS_PROGRAM_PRECONDITION(stack != NULL, "data_stack_pop_pointer: stack is NULL");
+  NEXUS_PROGRAM_PRECONDITION(stack->buffer.element_size == NEXUS_SIZEOF(void *), "data_stack_pop_pointer: element_size is not pointer-sized");
+  return nexus_data_stack_pop(stack, (void *)out_pointer);
+}
+
+void *nexus_data_stack_peek_pointer(NexusDataStack *stack) {
+  void *slot;
+  void *pointer;
+
+  NEXUS_PROGRAM_PRECONDITION(stack != NULL, "data_stack_peek_pointer: stack is NULL");
+  NEXUS_PROGRAM_PRECONDITION(stack->buffer.element_size == NEXUS_SIZEOF(void *), "data_stack_peek_pointer: element_size is not pointer-sized");
+  slot = nexus_data_stack_peek(stack);
+  if (slot == NULL) {
+    return NULL;
+  }
+  nexus_memory_bytes_copy(slot, (void *)&pointer, NEXUS_SIZEOF(pointer));
+  return pointer;
+}
+
 void nexus_data_stack_clear(NexusDataStack *stack) {
   NEXUS_PROGRAM_PRECONDITION(stack != NULL, "data_stack_clear: stack is NULL");
   stack->buffer.length = 0;
@@ -1033,6 +1092,26 @@ void *nexus_data_queue_peek(NexusDataQueue *queue) {
   return n_data_buffer_at(&queue->buffer, queue->head);
 }
 
+void *nexus_data_queue_push_pointer(NexusDataQueue *queue, const void *pointer) {
+  NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_queue_push_pointer: queue is NULL");
+  NEXUS_PROGRAM_PRECONDITION(queue->buffer.element_size == NEXUS_SIZEOF(void *), "data_queue_push_pointer: element_size is not pointer-sized");
+  return nexus_data_queue_push(queue, (const void *)&pointer);
+}
+
+boolean nexus_data_queue_pop_pointer(NexusDataQueue *queue, void **out_pointer) {
+  NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_queue_pop_pointer: queue is NULL");
+  NEXUS_PROGRAM_PRECONDITION(queue->buffer.element_size == NEXUS_SIZEOF(void *), "data_queue_pop_pointer: element_size is not pointer-sized");
+  return nexus_data_queue_pop(queue, (void *)out_pointer);
+}
+
+void *nexus_data_queue_peek_pointer(NexusDataQueue *queue) {
+  void *slot;
+  NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_queue_peek_pointer: queue is NULL");
+  NEXUS_PROGRAM_PRECONDITION(queue->buffer.element_size == NEXUS_SIZEOF(void *), "data_queue_peek_pointer: element_size is not pointer-sized");
+  slot = nexus_data_queue_peek(queue);
+  return slot == NULL ? NULL : *(void *const *)slot;
+}
+
 void nexus_data_queue_clear(NexusDataQueue *queue) {
   NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_queue_clear: queue is NULL");
   queue->buffer.length = 0;
@@ -1124,6 +1203,30 @@ void *nexus_data_ringbuffer_at(NexusDataRingBuffer *ringbuffer, uint_large logic
 void *nexus_data_ringbuffer_linearize(NexusDataRingBuffer *ringbuffer) {
   NEXUS_PROGRAM_PRECONDITION(ringbuffer != NULL, "data_ringbuffer_linearize: ringbuffer is NULL");
   return n_data_buffer_linearize(&ringbuffer->buffer, &ringbuffer->head);
+}
+
+boolean nexus_data_ringbuffer_push_pointer(NexusDataRingBuffer *ringbuffer, const void *pointer) {
+  NEXUS_PROGRAM_PRECONDITION(ringbuffer != NULL, "data_ringbuffer_push_pointer: ringbuffer is NULL");
+  NEXUS_PROGRAM_PRECONDITION(ringbuffer->buffer.element_size == NEXUS_SIZEOF(void *),
+                             "data_ringbuffer_push_pointer: element_size is not pointer-sized");
+  return nexus_data_ringbuffer_push(ringbuffer, (const void *)&pointer);
+}
+
+boolean nexus_data_ringbuffer_pop_pointer(NexusDataRingBuffer *ringbuffer, void **out_pointer) {
+  NEXUS_PROGRAM_PRECONDITION(ringbuffer != NULL, "data_ringbuffer_pop_pointer: ringbuffer is NULL");
+  NEXUS_PROGRAM_PRECONDITION(ringbuffer->buffer.element_size == NEXUS_SIZEOF(void *),
+                             "data_ringbuffer_pop_pointer: element_size is not pointer-sized");
+  return nexus_data_ringbuffer_pop(ringbuffer, (void *)out_pointer);
+}
+
+void *nexus_data_ringbuffer_pointer_at(NexusDataRingBuffer *ringbuffer, uint_large logical_index) {
+  void *pointer;
+
+  NEXUS_PROGRAM_PRECONDITION(ringbuffer != NULL, "data_ringbuffer_pointer_at: ringbuffer is NULL");
+  NEXUS_PROGRAM_PRECONDITION(ringbuffer->buffer.element_size == NEXUS_SIZEOF(void *),
+                             "data_ringbuffer_pointer_at: element_size is not pointer-sized");
+  nexus_memory_bytes_copy(nexus_data_ringbuffer_at(ringbuffer, logical_index), (void *)&pointer, NEXUS_SIZEOF(pointer));
+  return pointer;
 }
 
 void nexus_data_ringbuffer_clear(NexusDataRingBuffer *ringbuffer) {
@@ -1236,6 +1339,35 @@ void *nexus_data_priority_queue_peek(NexusDataPriorityQueue *queue) {
     return NULL;
   }
   return n_data_buffer_at(&queue->buffer, 0);
+}
+
+void *nexus_data_priority_queue_push_pointer(NexusDataPriorityQueue *queue, const void *pointer) {
+  NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_priority_queue_push_pointer: queue is NULL");
+  NEXUS_PROGRAM_PRECONDITION(queue->buffer.element_size == NEXUS_SIZEOF(void *),
+                             "data_priority_queue_push_pointer: element_size is not pointer-sized");
+  return nexus_data_priority_queue_push(queue, (const void *)&pointer);
+}
+
+boolean nexus_data_priority_queue_pop_pointer(NexusDataPriorityQueue *queue, void **out_pointer) {
+  NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_priority_queue_pop_pointer: queue is NULL");
+  NEXUS_PROGRAM_PRECONDITION(queue->buffer.element_size == NEXUS_SIZEOF(void *),
+                             "data_priority_queue_pop_pointer: element_size is not pointer-sized");
+  return nexus_data_priority_queue_pop(queue, (void *)out_pointer);
+}
+
+void *nexus_data_priority_queue_peek_pointer(NexusDataPriorityQueue *queue) {
+  void *slot;
+  void *pointer;
+
+  NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_priority_queue_peek_pointer: queue is NULL");
+  NEXUS_PROGRAM_PRECONDITION(queue->buffer.element_size == NEXUS_SIZEOF(void *),
+                             "data_priority_queue_peek_pointer: element_size is not pointer-sized");
+  slot = nexus_data_priority_queue_peek(queue);
+  if (slot == NULL) {
+    return NULL;
+  }
+  nexus_memory_bytes_copy(slot, (void *)&pointer, NEXUS_SIZEOF(pointer));
+  return pointer;
 }
 
 void nexus_data_priority_queue_clear(NexusDataPriorityQueue *queue) {
@@ -1624,6 +1756,24 @@ boolean nexus_data_slabbed_list_pop(NexusDataSlabbedList *list, void *out_elemen
   return TRUE;
 }
 
+void nexus_data_slabbed_list_insert_pointer(NexusDataSlabbedList *list, uint_large index, const void *pointer) {
+  NEXUS_PROGRAM_PRECONDITION(list != NULL, "data_slabbed_list_insert_pointer: list is NULL");
+  NEXUS_PROGRAM_PRECONDITION(list->pool.element_size == NEXUS_SIZEOF(void *), "data_slabbed_list_insert_pointer: element_size is not pointer-sized");
+  nexus_data_slabbed_list_insert(list, index, (const void *)&pointer);
+}
+
+void nexus_data_slabbed_list_remove_pointer(NexusDataSlabbedList *list, uint_large index, void **out_pointer) {
+  NEXUS_PROGRAM_PRECONDITION(list != NULL, "data_slabbed_list_remove_pointer: list is NULL");
+  NEXUS_PROGRAM_PRECONDITION(list->pool.element_size == NEXUS_SIZEOF(void *), "data_slabbed_list_remove_pointer: element_size is not pointer-sized");
+  nexus_data_slabbed_list_remove(list, index, (void *)out_pointer);
+}
+
+boolean nexus_data_slabbed_list_pop_pointer(NexusDataSlabbedList *list, void **out_pointer) {
+  NEXUS_PROGRAM_PRECONDITION(list != NULL, "data_slabbed_list_pop_pointer: list is NULL");
+  NEXUS_PROGRAM_PRECONDITION(list->pool.element_size == NEXUS_SIZEOF(void *), "data_slabbed_list_pop_pointer: element_size is not pointer-sized");
+  return nexus_data_slabbed_list_pop(list, (void *)out_pointer);
+}
+
 void nexus_data_slabbed_list_clear(NexusDataSlabbedList *list) {
   NEXUS_PROGRAM_PRECONDITION(list != NULL, "data_slabbed_list_clear: list is NULL");
   while (list->order.length > 0) {
@@ -1707,6 +1857,35 @@ void *nexus_data_slabbed_stack_peek(NexusDataSlabbedStack *stack) {
     return NULL;
   }
   return ((void **)stack->list.order.data)[stack->list.order.length - 1U];
+}
+
+void *nexus_data_slabbed_stack_push_pointer(NexusDataSlabbedStack *stack, const void *pointer) {
+  NEXUS_PROGRAM_PRECONDITION(stack != NULL, "data_slabbed_stack_push_pointer: stack is NULL");
+  NEXUS_PROGRAM_PRECONDITION(stack->list.pool.element_size == NEXUS_SIZEOF(void *),
+                             "data_slabbed_stack_push_pointer: element_size is not pointer-sized");
+  return nexus_data_slabbed_stack_push(stack, (const void *)&pointer);
+}
+
+boolean nexus_data_slabbed_stack_pop_pointer(NexusDataSlabbedStack *stack, void **out_pointer) {
+  NEXUS_PROGRAM_PRECONDITION(stack != NULL, "data_slabbed_stack_pop_pointer: stack is NULL");
+  NEXUS_PROGRAM_PRECONDITION(stack->list.pool.element_size == NEXUS_SIZEOF(void *),
+                             "data_slabbed_stack_pop_pointer: element_size is not pointer-sized");
+  return nexus_data_slabbed_stack_pop(stack, (void *)out_pointer);
+}
+
+void *nexus_data_slabbed_stack_peek_pointer(NexusDataSlabbedStack *stack) {
+  void *slot;
+  void *pointer;
+
+  NEXUS_PROGRAM_PRECONDITION(stack != NULL, "data_slabbed_stack_peek_pointer: stack is NULL");
+  NEXUS_PROGRAM_PRECONDITION(stack->list.pool.element_size == NEXUS_SIZEOF(void *),
+                             "data_slabbed_stack_peek_pointer: element_size is not pointer-sized");
+  slot = nexus_data_slabbed_stack_peek(stack);
+  if (slot == NULL) {
+    return NULL;
+  }
+  nexus_memory_bytes_copy(slot, (void *)&pointer, NEXUS_SIZEOF(pointer));
+  return pointer;
 }
 
 void nexus_data_slabbed_stack_clear(NexusDataSlabbedStack *stack) {
@@ -1809,6 +1988,26 @@ boolean nexus_data_slabbed_queue_pop(NexusDataSlabbedQueue *queue, void *out_ele
 void *nexus_data_slabbed_queue_peek(NexusDataSlabbedQueue *queue) {
   NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_slabbed_queue_peek: queue is NULL");
   return queue->order.length == 0 ? NULL : ((void **)queue->order.data)[queue->head];
+}
+
+void *nexus_data_slabbed_queue_push_pointer(NexusDataSlabbedQueue *queue, const void *pointer) {
+  NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_slabbed_queue_push_pointer: queue is NULL");
+  NEXUS_PROGRAM_PRECONDITION(queue->pool.element_size == NEXUS_SIZEOF(void *), "data_slabbed_queue_push_pointer: element_size is not pointer-sized");
+  return nexus_data_slabbed_queue_push(queue, (const void *)&pointer);
+}
+
+boolean nexus_data_slabbed_queue_pop_pointer(NexusDataSlabbedQueue *queue, void **out_pointer) {
+  NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_slabbed_queue_pop_pointer: queue is NULL");
+  NEXUS_PROGRAM_PRECONDITION(queue->pool.element_size == NEXUS_SIZEOF(void *), "data_slabbed_queue_pop_pointer: element_size is not pointer-sized");
+  return nexus_data_slabbed_queue_pop(queue, (void *)out_pointer);
+}
+
+void *nexus_data_slabbed_queue_peek_pointer(NexusDataSlabbedQueue *queue) {
+  void *slot;
+  NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_slabbed_queue_peek_pointer: queue is NULL");
+  NEXUS_PROGRAM_PRECONDITION(queue->pool.element_size == NEXUS_SIZEOF(void *), "data_slabbed_queue_peek_pointer: element_size is not pointer-sized");
+  slot = nexus_data_slabbed_queue_peek(queue);
+  return slot == NULL ? NULL : *(void *const *)slot;
 }
 
 void nexus_data_slabbed_queue_clear(NexusDataSlabbedQueue *queue) {
@@ -1927,6 +2126,35 @@ boolean nexus_data_slabbed_priority_queue_pop(NexusDataSlabbedPriorityQueue *que
 void *nexus_data_slabbed_priority_queue_peek(NexusDataSlabbedPriorityQueue *queue) {
   NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_slabbed_priority_queue_peek: queue is NULL");
   return queue->list.order.length == 0 ? NULL : ((void **)queue->list.order.data)[0];
+}
+
+void *nexus_data_slabbed_priority_queue_push_pointer(NexusDataSlabbedPriorityQueue *queue, const void *pointer) {
+  NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_slabbed_priority_queue_push_pointer: queue is NULL");
+  NEXUS_PROGRAM_PRECONDITION(queue->list.pool.element_size == NEXUS_SIZEOF(void *),
+                             "data_slabbed_priority_queue_push_pointer: element_size is not pointer-sized");
+  return nexus_data_slabbed_priority_queue_push(queue, (const void *)&pointer);
+}
+
+boolean nexus_data_slabbed_priority_queue_pop_pointer(NexusDataSlabbedPriorityQueue *queue, void **out_pointer) {
+  NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_slabbed_priority_queue_pop_pointer: queue is NULL");
+  NEXUS_PROGRAM_PRECONDITION(queue->list.pool.element_size == NEXUS_SIZEOF(void *),
+                             "data_slabbed_priority_queue_pop_pointer: element_size is not pointer-sized");
+  return nexus_data_slabbed_priority_queue_pop(queue, (void *)out_pointer);
+}
+
+void *nexus_data_slabbed_priority_queue_peek_pointer(NexusDataSlabbedPriorityQueue *queue) {
+  void *slot;
+  void *pointer;
+
+  NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_slabbed_priority_queue_peek_pointer: queue is NULL");
+  NEXUS_PROGRAM_PRECONDITION(queue->list.pool.element_size == NEXUS_SIZEOF(void *),
+                             "data_slabbed_priority_queue_peek_pointer: element_size is not pointer-sized");
+  slot = nexus_data_slabbed_priority_queue_peek(queue);
+  if (slot == NULL) {
+    return NULL;
+  }
+  nexus_memory_bytes_copy(slot, (void *)&pointer, NEXUS_SIZEOF(pointer));
+  return pointer;
 }
 
 void nexus_data_slabbed_priority_queue_clear(NexusDataSlabbedPriorityQueue *queue) {
@@ -2340,6 +2568,38 @@ boolean nexus_data_hashmap_remove(NexusDataHashMap *hashmap, const void *key, vo
   return TRUE;
 }
 
+void nexus_data_hashmap_put_pointer(NexusDataHashMap *hashmap, const void *key, const void *pointer) {
+  NEXUS_PROGRAM_PRECONDITION(hashmap != NULL, "data_hashmap_put_pointer: hashmap is NULL");
+  NEXUS_PROGRAM_PRECONDITION(hashmap->value_size == NEXUS_SIZEOF(void *), "data_hashmap_put_pointer: value_size is not pointer-sized");
+  nexus_data_hashmap_put(hashmap, key, (const void *)&pointer);
+}
+
+void *nexus_data_hashmap_get_pointer(const NexusDataHashMap *hashmap, const void *key) {
+  const void *slot;
+  void       *pointer;
+
+  NEXUS_PROGRAM_PRECONDITION(hashmap != NULL, "data_hashmap_get_pointer: hashmap is NULL");
+  NEXUS_PROGRAM_PRECONDITION(hashmap->value_size == NEXUS_SIZEOF(void *), "data_hashmap_get_pointer: value_size is not pointer-sized");
+  slot = nexus_data_hashmap_get_const(hashmap, key);
+  if (slot == NULL) {
+    return NULL;
+  }
+  nexus_memory_bytes_copy(slot, (void *)&pointer, NEXUS_SIZEOF(pointer));
+  return pointer;
+}
+
+boolean nexus_data_hashmap_get_copy_pointer(const NexusDataHashMap *hashmap, const void *key, void **out_pointer) {
+  NEXUS_PROGRAM_PRECONDITION(hashmap != NULL, "data_hashmap_get_copy_pointer: hashmap is NULL");
+  NEXUS_PROGRAM_PRECONDITION(hashmap->value_size == NEXUS_SIZEOF(void *), "data_hashmap_get_copy_pointer: value_size is not pointer-sized");
+  return nexus_data_hashmap_get_copy(hashmap, key, (void *)out_pointer);
+}
+
+boolean nexus_data_hashmap_remove_pointer(NexusDataHashMap *hashmap, const void *key, void **out_pointer) {
+  NEXUS_PROGRAM_PRECONDITION(hashmap != NULL, "data_hashmap_remove_pointer: hashmap is NULL");
+  NEXUS_PROGRAM_PRECONDITION(hashmap->value_size == NEXUS_SIZEOF(void *), "data_hashmap_remove_pointer: value_size is not pointer-sized");
+  return nexus_data_hashmap_remove(hashmap, key, (void *)out_pointer);
+}
+
 void nexus_data_hashmap_clear(NexusDataHashMap *hashmap) {
   NEXUS_PROGRAM_PRECONDITION(hashmap != NULL, "data_hashmap_clear: hashmap is NULL");
 
@@ -2515,6 +2775,40 @@ boolean nexus_data_slabbed_hashmap_contains(const NexusDataSlabbedHashMap *hashm
 boolean nexus_data_slabbed_hashmap_remove(NexusDataSlabbedHashMap *hashmap, const void *key, void *out_value) {
   NEXUS_PROGRAM_PRECONDITION(hashmap != NULL, "data_slabbed_hashmap_remove: hashmap is NULL");
   return nexus_data_hashmap_remove(&hashmap->table, key, out_value);
+}
+
+void nexus_data_slabbed_hashmap_put_pointer(NexusDataSlabbedHashMap *hashmap, const void *key, const void *pointer) {
+  NEXUS_PROGRAM_PRECONDITION(hashmap != NULL, "data_slabbed_hashmap_put_pointer: hashmap is NULL");
+  NEXUS_PROGRAM_PRECONDITION(hashmap->table.value_size == NEXUS_SIZEOF(void *), "data_slabbed_hashmap_put_pointer: value_size is not pointer-sized");
+  nexus_data_slabbed_hashmap_put(hashmap, key, (const void *)&pointer);
+}
+
+void *nexus_data_slabbed_hashmap_get_pointer(const NexusDataSlabbedHashMap *hashmap, const void *key) {
+  const void *slot;
+  void       *pointer;
+
+  NEXUS_PROGRAM_PRECONDITION(hashmap != NULL, "data_slabbed_hashmap_get_pointer: hashmap is NULL");
+  NEXUS_PROGRAM_PRECONDITION(hashmap->table.value_size == NEXUS_SIZEOF(void *), "data_slabbed_hashmap_get_pointer: value_size is not pointer-sized");
+  slot = nexus_data_slabbed_hashmap_get_const(hashmap, key);
+  if (slot == NULL) {
+    return NULL;
+  }
+  nexus_memory_bytes_copy(slot, (void *)&pointer, NEXUS_SIZEOF(pointer));
+  return pointer;
+}
+
+boolean nexus_data_slabbed_hashmap_get_copy_pointer(const NexusDataSlabbedHashMap *hashmap, const void *key, void **out_pointer) {
+  NEXUS_PROGRAM_PRECONDITION(hashmap != NULL, "data_slabbed_hashmap_get_copy_pointer: hashmap is NULL");
+  NEXUS_PROGRAM_PRECONDITION(hashmap->table.value_size == NEXUS_SIZEOF(void *),
+                             "data_slabbed_hashmap_get_copy_pointer: value_size is not pointer-sized");
+  return nexus_data_slabbed_hashmap_get_copy(hashmap, key, (void *)out_pointer);
+}
+
+boolean nexus_data_slabbed_hashmap_remove_pointer(NexusDataSlabbedHashMap *hashmap, const void *key, void **out_pointer) {
+  NEXUS_PROGRAM_PRECONDITION(hashmap != NULL, "data_slabbed_hashmap_remove_pointer: hashmap is NULL");
+  NEXUS_PROGRAM_PRECONDITION(hashmap->table.value_size == NEXUS_SIZEOF(void *),
+                             "data_slabbed_hashmap_remove_pointer: value_size is not pointer-sized");
+  return nexus_data_slabbed_hashmap_remove(hashmap, key, (void *)out_pointer);
 }
 
 void nexus_data_slabbed_hashmap_clear(NexusDataSlabbedHashMap *hashmap) {

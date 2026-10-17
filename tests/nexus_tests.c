@@ -1295,6 +1295,634 @@ static int nexus_test_data_hashmap_rehash(boolean force_collisions) {
   return 0;
 }
 
+static int nexus_test_compare_pointer_ints(const void *left, const void *right, void *user_data) {
+  const int *left_value;
+  const int *right_value;
+  (void)user_data;
+
+  left_value  = *(const int *const *)left;
+  right_value = *(const int *const *)right;
+  if (left_value == NULL || right_value == NULL) {
+    return (left_value != NULL) - (right_value != NULL);
+  }
+  return (*left_value > *right_value) - (*left_value < *right_value);
+}
+
+static int nexus_test_data_pointers(void) {
+  NexusDataArray                 array;
+  NexusDataList                 *list;
+  NexusDataSlabbedList          *slabbed_list;
+  NexusDataStack                *stack;
+  NexusDataSlabbedStack         *slabbed_stack;
+  NexusDataQueue                *queue;
+  NexusDataSlabbedQueue         *slabbed_queue;
+  NexusDataPriorityQueue        *priority_queue;
+  NexusDataSlabbedPriorityQueue *slabbed_priority_queue;
+  NexusDataRingBuffer           *ringbuffer;
+  NexusDataHashMap              *hashmap;
+  NexusDataSlabbedHashMap       *slabbed_hashmap;
+  NexusDataHashMapConfig         config;
+  NexusError                    *error;
+  byte                           unaligned[(2U * sizeof(void *)) + 1U];
+  int                            values[64];
+  int                            index;
+  int                            key;
+  int                            expected_index;
+  void                          *expected;
+  void                          *output;
+  void                          *saved_slot;
+
+  for (index = 0; index < 64; index++) {
+    values[index] = index;
+  }
+  array = nexus_data_array_view_create(unaligned + 1U, NEXUS_SIZEOF(void *), 2U);
+  nexus_data_array_set_pointer(&array, 0, &values[0]);
+  nexus_data_array_set_pointer(&array, 1U, NULL);
+  if (nexus_data_array_pointer_at(&array, 0) != &values[0] || nexus_data_array_pointer_at(&array, 1U) != NULL) {
+    return nexus_test_fail(900);
+  }
+  list = nexus_data_list_create(NEXUS_SIZEOF(void *), 0);
+  for (index = 0; index < 64; index++) {
+    nexus_data_list_append_pointer(list, &values[index]);
+  }
+  nexus_data_list_insert_pointer(list, 1U, NULL);
+  if (nexus_data_list_pointer_at(list, 1U) != NULL || nexus_data_list_pointer_at(list, 2U) != &values[1]) {
+    return nexus_test_fail(901);
+  }
+  output = &values[0];
+  nexus_data_list_remove_pointer(list, 1U, &output);
+  if (output != NULL) {
+    return nexus_test_fail(902);
+  }
+  for (index = 63; index >= 0; index--) {
+    if (nexus_data_list_pointer_at(list, (uint_large)index) != &values[index] || !nexus_data_list_pop_pointer(list, &output) ||
+        output != &values[index]) {
+      return nexus_test_fail(903);
+    }
+  }
+  nexus_data_list_insert_pointer(list, 0, NULL);
+  if (!nexus_data_list_pop_pointer(list, &output) || output != NULL) {
+    return nexus_test_fail(904);
+  }
+  output = &values[0];
+  if (nexus_data_list_pop_pointer(list, &output) || output != &values[0]) {
+    return nexus_test_fail(905);
+  }
+  nexus_data_list_append_pointer(list, NULL);
+  nexus_data_list_remove_pointer(list, 0, NULL);
+  nexus_data_list_append_pointer(list, NULL);
+  if (!nexus_data_list_pop_pointer(list, NULL)) {
+    return nexus_test_fail(906);
+  }
+  nexus_data_list_destroy(list);
+  slabbed_list = nexus_data_slabbed_list_create(NEXUS_SIZEOF(void *), 0, 3U);
+  for (index = 0; index < 64; index++) {
+    nexus_data_slabbed_list_append_pointer(slabbed_list, &values[index]);
+  }
+  nexus_data_slabbed_list_insert_pointer(slabbed_list, 1U, NULL);
+  if (nexus_data_slabbed_list_pointer_at(slabbed_list, 1U) != NULL || nexus_data_slabbed_list_pointer_at(slabbed_list, 2U) != &values[1]) {
+    return nexus_test_fail(907);
+  }
+  output = &values[0];
+  nexus_data_slabbed_list_remove_pointer(slabbed_list, 1U, &output);
+  if (output != NULL) {
+    return nexus_test_fail(908);
+  }
+  for (index = 63; index >= 0; index--) {
+    if (nexus_data_slabbed_list_pointer_at(slabbed_list, (uint_large)index) != &values[index] ||
+        !nexus_data_slabbed_list_pop_pointer(slabbed_list, &output) || output != &values[index]) {
+      return nexus_test_fail(909);
+    }
+  }
+  nexus_data_slabbed_list_insert_pointer(slabbed_list, 0, NULL);
+  if (!nexus_data_slabbed_list_pop_pointer(slabbed_list, &output) || output != NULL) {
+    return nexus_test_fail(910);
+  }
+  output = &values[0];
+  if (nexus_data_slabbed_list_pop_pointer(slabbed_list, &output) || output != &values[0]) {
+    return nexus_test_fail(911);
+  }
+  nexus_data_slabbed_list_append_pointer(slabbed_list, NULL);
+  nexus_data_slabbed_list_remove_pointer(slabbed_list, 0, NULL);
+  nexus_data_slabbed_list_append_pointer(slabbed_list, NULL);
+  if (!nexus_data_slabbed_list_pop_pointer(slabbed_list, NULL)) {
+    return nexus_test_fail(912);
+  }
+  nexus_data_slabbed_list_destroy(slabbed_list);
+  stack  = nexus_data_stack_create(NEXUS_SIZEOF(void *), 0);
+  output = &values[0];
+  if (nexus_data_stack_peek_pointer(stack) != NULL || nexus_data_stack_pop_pointer(stack, &output) || output != &values[0]) {
+    return nexus_test_fail(913);
+  }
+  saved_slot = nexus_data_stack_push_pointer(stack, &values[63]);
+  if (*(void **)saved_slot != &values[63]) {
+    return nexus_test_fail(914);
+  }
+  for (index = 62; index >= 0; index--) {
+    nexus_data_stack_push_pointer(stack, index == 17 ? NULL : &values[index]);
+  }
+  for (index = 0; index < 64; index++) {
+    expected_index = index;
+    expected       = expected_index == 17 ? NULL : &values[expected_index];
+    if (nexus_data_stack_peek_pointer(stack) != expected || !nexus_data_stack_pop_pointer(stack, &output) || output != expected) {
+      return nexus_test_fail(915);
+    }
+  }
+  output = &values[0];
+  if (nexus_data_stack_pop_pointer(stack, &output) || output != &values[0] || nexus_data_stack_peek_pointer(stack) != NULL) {
+    return nexus_test_fail(916);
+  }
+  nexus_data_stack_push_pointer(stack, NULL);
+  if (!nexus_data_stack_pop_pointer(stack, NULL)) {
+    return nexus_test_fail(917);
+  }
+  nexus_data_stack_destroy(stack);
+  slabbed_stack = nexus_data_slabbed_stack_create(NEXUS_SIZEOF(void *), 0, 3U);
+  output        = &values[0];
+  if (nexus_data_slabbed_stack_peek_pointer(slabbed_stack) != NULL || nexus_data_slabbed_stack_pop_pointer(slabbed_stack, &output) ||
+      output != &values[0]) {
+    return nexus_test_fail(918);
+  }
+  saved_slot = nexus_data_slabbed_stack_push_pointer(slabbed_stack, &values[63]);
+  if (*(void **)saved_slot != &values[63]) {
+    return nexus_test_fail(919);
+  }
+  for (index = 62; index >= 0; index--) {
+    nexus_data_slabbed_stack_push_pointer(slabbed_stack, index == 17 ? NULL : &values[index]);
+  }
+  if (*(void **)saved_slot != &values[63]) {
+    return nexus_test_fail(920);
+  }
+  for (index = 0; index < 64; index++) {
+    expected_index = index;
+    expected       = expected_index == 17 ? NULL : &values[expected_index];
+    if (nexus_data_slabbed_stack_peek_pointer(slabbed_stack) != expected || !nexus_data_slabbed_stack_pop_pointer(slabbed_stack, &output) ||
+        output != expected) {
+      return nexus_test_fail(921);
+    }
+  }
+  output = &values[0];
+  if (nexus_data_slabbed_stack_pop_pointer(slabbed_stack, &output) || output != &values[0] ||
+      nexus_data_slabbed_stack_peek_pointer(slabbed_stack) != NULL) {
+    return nexus_test_fail(922);
+  }
+  nexus_data_slabbed_stack_push_pointer(slabbed_stack, NULL);
+  if (!nexus_data_slabbed_stack_pop_pointer(slabbed_stack, NULL)) {
+    return nexus_test_fail(923);
+  }
+  nexus_data_slabbed_stack_destroy(slabbed_stack);
+  queue  = nexus_data_queue_create(NEXUS_SIZEOF(void *), 0);
+  output = &values[0];
+  if (nexus_data_queue_peek_pointer(queue) != NULL || nexus_data_queue_pop_pointer(queue, &output) || output != &values[0]) {
+    return nexus_test_fail(924);
+  }
+  saved_slot = nexus_data_queue_push_pointer(queue, &values[63]);
+  if (*(void **)saved_slot != &values[63]) {
+    return nexus_test_fail(925);
+  }
+  for (index = 62; index >= 0; index--) {
+    nexus_data_queue_push_pointer(queue, index == 17 ? NULL : &values[index]);
+  }
+  for (index = 0; index < 64; index++) {
+    expected_index = 63 - index;
+    expected       = expected_index == 17 ? NULL : &values[expected_index];
+    if (nexus_data_queue_peek_pointer(queue) != expected || !nexus_data_queue_pop_pointer(queue, &output) || output != expected) {
+      return nexus_test_fail(926);
+    }
+  }
+  output = &values[0];
+  if (nexus_data_queue_pop_pointer(queue, &output) || output != &values[0] || nexus_data_queue_peek_pointer(queue) != NULL) {
+    return nexus_test_fail(927);
+  }
+  nexus_data_queue_push_pointer(queue, NULL);
+  if (!nexus_data_queue_pop_pointer(queue, NULL)) {
+    return nexus_test_fail(928);
+  }
+  nexus_data_queue_destroy(queue);
+  slabbed_queue = nexus_data_slabbed_queue_create(NEXUS_SIZEOF(void *), 0, 3U);
+  output        = &values[0];
+  if (nexus_data_slabbed_queue_peek_pointer(slabbed_queue) != NULL || nexus_data_slabbed_queue_pop_pointer(slabbed_queue, &output) ||
+      output != &values[0]) {
+    return nexus_test_fail(929);
+  }
+  saved_slot = nexus_data_slabbed_queue_push_pointer(slabbed_queue, &values[63]);
+  if (*(void **)saved_slot != &values[63]) {
+    return nexus_test_fail(930);
+  }
+  for (index = 62; index >= 0; index--) {
+    nexus_data_slabbed_queue_push_pointer(slabbed_queue, index == 17 ? NULL : &values[index]);
+  }
+  if (*(void **)saved_slot != &values[63]) {
+    return nexus_test_fail(931);
+  }
+  for (index = 0; index < 64; index++) {
+    expected_index = 63 - index;
+    expected       = expected_index == 17 ? NULL : &values[expected_index];
+    if (nexus_data_slabbed_queue_peek_pointer(slabbed_queue) != expected || !nexus_data_slabbed_queue_pop_pointer(slabbed_queue, &output) ||
+        output != expected) {
+      return nexus_test_fail(932);
+    }
+  }
+  output = &values[0];
+  if (nexus_data_slabbed_queue_pop_pointer(slabbed_queue, &output) || output != &values[0] ||
+      nexus_data_slabbed_queue_peek_pointer(slabbed_queue) != NULL) {
+    return nexus_test_fail(933);
+  }
+  nexus_data_slabbed_queue_push_pointer(slabbed_queue, NULL);
+  if (!nexus_data_slabbed_queue_pop_pointer(slabbed_queue, NULL)) {
+    return nexus_test_fail(934);
+  }
+  nexus_data_slabbed_queue_destroy(slabbed_queue);
+  priority_queue = nexus_data_priority_queue_create(NEXUS_SIZEOF(void *), 0, nexus_test_compare_pointer_ints, NULL);
+  output         = &values[0];
+  if (nexus_data_priority_queue_peek_pointer(priority_queue) != NULL || nexus_data_priority_queue_pop_pointer(priority_queue, &output) ||
+      output != &values[0]) {
+    return nexus_test_fail(935);
+  }
+  saved_slot = nexus_data_priority_queue_push_pointer(priority_queue, &values[63]);
+  if (*(void **)saved_slot != &values[63]) {
+    return nexus_test_fail(936);
+  }
+  for (index = 62; index >= 0; index--) {
+    nexus_data_priority_queue_push_pointer(priority_queue, index == 17 ? NULL : &values[index]);
+  }
+  for (index = 0; index < 64; index++) {
+    expected_index = index - 1;
+    if (expected_index >= 17) {
+      expected_index++;
+    }
+    expected = index == 0 ? NULL : &values[expected_index];
+    if (nexus_data_priority_queue_peek_pointer(priority_queue) != expected || !nexus_data_priority_queue_pop_pointer(priority_queue, &output) ||
+        output != expected) {
+      return nexus_test_fail(937);
+    }
+  }
+  output = &values[0];
+  if (nexus_data_priority_queue_pop_pointer(priority_queue, &output) || output != &values[0] ||
+      nexus_data_priority_queue_peek_pointer(priority_queue) != NULL) {
+    return nexus_test_fail(938);
+  }
+  nexus_data_priority_queue_push_pointer(priority_queue, NULL);
+  if (!nexus_data_priority_queue_pop_pointer(priority_queue, NULL)) {
+    return nexus_test_fail(939);
+  }
+  nexus_data_priority_queue_destroy(priority_queue);
+  slabbed_priority_queue = nexus_data_slabbed_priority_queue_create(NEXUS_SIZEOF(void *), 0, 3U, nexus_test_compare_pointer_ints, NULL);
+  output                 = &values[0];
+  if (nexus_data_slabbed_priority_queue_peek_pointer(slabbed_priority_queue) != NULL ||
+      nexus_data_slabbed_priority_queue_pop_pointer(slabbed_priority_queue, &output) || output != &values[0]) {
+    return nexus_test_fail(940);
+  }
+  saved_slot = nexus_data_slabbed_priority_queue_push_pointer(slabbed_priority_queue, &values[63]);
+  if (*(void **)saved_slot != &values[63]) {
+    return nexus_test_fail(941);
+  }
+  for (index = 62; index >= 0; index--) {
+    nexus_data_slabbed_priority_queue_push_pointer(slabbed_priority_queue, index == 17 ? NULL : &values[index]);
+  }
+  if (*(void **)saved_slot != &values[63]) {
+    return nexus_test_fail(942);
+  }
+  for (index = 0; index < 64; index++) {
+    expected_index = index - 1;
+    if (expected_index >= 17) {
+      expected_index++;
+    }
+    expected = index == 0 ? NULL : &values[expected_index];
+    if (nexus_data_slabbed_priority_queue_peek_pointer(slabbed_priority_queue) != expected ||
+        !nexus_data_slabbed_priority_queue_pop_pointer(slabbed_priority_queue, &output) || output != expected) {
+      return nexus_test_fail(943);
+    }
+  }
+  output = &values[0];
+  if (nexus_data_slabbed_priority_queue_pop_pointer(slabbed_priority_queue, &output) || output != &values[0] ||
+      nexus_data_slabbed_priority_queue_peek_pointer(slabbed_priority_queue) != NULL) {
+    return nexus_test_fail(944);
+  }
+  nexus_data_slabbed_priority_queue_push_pointer(slabbed_priority_queue, NULL);
+  if (!nexus_data_slabbed_priority_queue_pop_pointer(slabbed_priority_queue, NULL)) {
+    return nexus_test_fail(945);
+  }
+  nexus_data_slabbed_priority_queue_destroy(slabbed_priority_queue);
+  ringbuffer = nexus_data_ringbuffer_create(NEXUS_SIZEOF(void *), 3U);
+  output     = &values[0];
+  if (nexus_data_ringbuffer_pop_pointer(ringbuffer, &output) || output != &values[0]) {
+    return nexus_test_fail(946);
+  }
+  if (nexus_data_ringbuffer_push_pointer(ringbuffer, &values[0]) || nexus_data_ringbuffer_push_pointer(ringbuffer, NULL) ||
+      nexus_data_ringbuffer_push_pointer(ringbuffer, &values[2])) {
+    return nexus_test_fail(947);
+  }
+  if (!nexus_data_ringbuffer_push_pointer(ringbuffer, &values[3]) || nexus_data_ringbuffer_pointer_at(ringbuffer, 0) != NULL ||
+      nexus_data_ringbuffer_pointer_at(ringbuffer, 1U) != &values[2]) {
+    return nexus_test_fail(948);
+  }
+  nexus_data_ringbuffer_linearize(ringbuffer);
+  if (!nexus_data_ringbuffer_pop_pointer(ringbuffer, &output) || output != NULL) {
+    return nexus_test_fail(949);
+  }
+  if (nexus_data_ringbuffer_push_pointer(ringbuffer, &values[4])) {
+    return nexus_test_fail(950);
+  }
+  for (index = 2; index <= 4; index++) {
+    if (!nexus_data_ringbuffer_pop_pointer(ringbuffer, &output) || output != &values[index]) {
+      return nexus_test_fail(960);
+    }
+  }
+  nexus_data_ringbuffer_push_pointer(ringbuffer, NULL);
+  if (!nexus_data_ringbuffer_pop_pointer(ringbuffer, NULL)) {
+    return nexus_test_fail(951);
+  }
+  output = &values[0];
+  if (nexus_data_ringbuffer_pop_pointer(ringbuffer, &output) || output != &values[0]) {
+    return nexus_test_fail(952);
+  }
+  nexus_data_ringbuffer_destroy(ringbuffer);
+  nexus_data_hashmap_config_initialize(&config, NEXUS_SIZEOF(int), NEXUS_SIZEOF(void *));
+  config.seed_is_set = TRUE;
+  config.seed        = 7U;
+  error              = nexus_data_hashmap_create(&config, &hashmap);
+  if (error->code != NEXUS_PROGRAM_ERROR_SUCCESS()->code) {
+    return nexus_test_fail(953);
+  }
+  for (key = 0; key < 64; key++) {
+    nexus_data_hashmap_put_pointer(hashmap, &key, key == 17 ? NULL : &values[key]);
+  }
+  nexus_data_hashmap_reserve(hashmap, 512U);
+  for (key = 0; key < 64; key++) {
+    expected = key == 17 ? NULL : &values[key];
+    output   = &values[0];
+    if (nexus_data_hashmap_get_pointer(hashmap, &key) != expected || !nexus_data_hashmap_get_copy_pointer(hashmap, &key, &output) ||
+        output != expected) {
+      return nexus_test_fail(954);
+    }
+  }
+  key = 3;
+  nexus_data_hashmap_put_pointer(hashmap, &key, NULL);
+  if (nexus_data_hashmap_length_get(hashmap) != 64U || !nexus_data_hashmap_remove_pointer(hashmap, &key, &output) || output != NULL) {
+    return nexus_test_fail(955);
+  }
+  key = 17;
+  if (!nexus_data_hashmap_remove_pointer(hashmap, &key, NULL)) {
+    return nexus_test_fail(956);
+  }
+  key = 63;
+  if (!nexus_data_hashmap_remove_pointer(hashmap, &key, &output) || output != &values[63]) {
+    return nexus_test_fail(957);
+  }
+  key    = 99;
+  output = &values[0];
+  if (nexus_data_hashmap_get_pointer(hashmap, &key) != NULL || nexus_data_hashmap_get_copy_pointer(hashmap, &key, &output) ||
+      nexus_data_hashmap_remove_pointer(hashmap, &key, &output) || output != &values[0]) {
+    return nexus_test_fail(958);
+  }
+  nexus_data_hashmap_destroy(hashmap);
+  nexus_data_hashmap_config_initialize(&config, NEXUS_SIZEOF(int), NEXUS_SIZEOF(void *));
+  config.seed_is_set = TRUE;
+  config.seed        = 7U;
+  error              = nexus_data_slabbed_hashmap_create(&config, 3U, &slabbed_hashmap);
+  if (error->code != NEXUS_PROGRAM_ERROR_SUCCESS()->code) {
+    return nexus_test_fail(959);
+  }
+  for (key = 0; key < 64; key++) {
+    nexus_data_slabbed_hashmap_put_pointer(slabbed_hashmap, &key, key == 17 ? NULL : &values[key]);
+  }
+  nexus_data_slabbed_hashmap_reserve(slabbed_hashmap, 512U);
+  for (key = 0; key < 64; key++) {
+    expected = key == 17 ? NULL : &values[key];
+    output   = &values[0];
+    if (nexus_data_slabbed_hashmap_get_pointer(slabbed_hashmap, &key) != expected ||
+        !nexus_data_slabbed_hashmap_get_copy_pointer(slabbed_hashmap, &key, &output) || output != expected) {
+      return nexus_test_fail(960);
+    }
+  }
+  key = 3;
+  nexus_data_slabbed_hashmap_put_pointer(slabbed_hashmap, &key, NULL);
+  if (nexus_data_slabbed_hashmap_length_get(slabbed_hashmap) != 64U || !nexus_data_slabbed_hashmap_remove_pointer(slabbed_hashmap, &key, &output) ||
+      output != NULL) {
+    return nexus_test_fail(961);
+  }
+  key = 17;
+  if (!nexus_data_slabbed_hashmap_remove_pointer(slabbed_hashmap, &key, NULL)) {
+    return nexus_test_fail(962);
+  }
+  key = 63;
+  if (!nexus_data_slabbed_hashmap_remove_pointer(slabbed_hashmap, &key, &output) || output != &values[63]) {
+    return nexus_test_fail(963);
+  }
+  key    = 99;
+  output = &values[0];
+  if (nexus_data_slabbed_hashmap_get_pointer(slabbed_hashmap, &key) != NULL ||
+      nexus_data_slabbed_hashmap_get_copy_pointer(slabbed_hashmap, &key, &output) ||
+      nexus_data_slabbed_hashmap_remove_pointer(slabbed_hashmap, &key, &output) || output != &values[0]) {
+    return nexus_test_fail(964);
+  }
+  nexus_data_slabbed_hashmap_destroy(slabbed_hashmap);
+  return 0;
+}
+
+#if NEXUS_DEVELOPER_MODE
+static int nexus_test_data_pointer_size_assertions(void) {
+  NexusDataArray                 array;
+  NexusDataList                 *list;
+  NexusDataSlabbedList          *slabbed_list;
+  NexusDataStack                *stack;
+  NexusDataSlabbedStack         *slabbed_stack;
+  NexusDataQueue                *queue;
+  NexusDataSlabbedQueue         *slabbed_queue;
+  NexusDataRingBuffer           *ringbuffer;
+  NexusDataPriorityQueue        *priority_queue;
+  NexusDataSlabbedPriorityQueue *slabbed_priority_queue;
+  NexusDataHashMap              *hashmap;
+  NexusDataSlabbedHashMap       *slabbed_hashmap;
+  NexusDataHashMapConfig         config;
+  NexusError                    *error;
+  jmp_buf                        recovery_point;
+  byte                           storage;
+  int                            index;
+  int                            key;
+  void                          *output;
+
+  key                    = 1;
+  output                 = NULL;
+  array                  = nexus_data_array_view_create(&storage, 1U, 1U);
+  list                   = nexus_data_list_create(1U, 0);
+  slabbed_list           = nexus_data_slabbed_list_create(1U, 0, 3U);
+  stack                  = nexus_data_stack_create(1U, 0);
+  slabbed_stack          = nexus_data_slabbed_stack_create(1U, 0, 3U);
+  queue                  = nexus_data_queue_create(1U, 0);
+  slabbed_queue          = nexus_data_slabbed_queue_create(1U, 0, 3U);
+  ringbuffer             = nexus_data_ringbuffer_create(1U, 1U);
+  priority_queue         = nexus_data_priority_queue_create(1U, 0, nexus_test_compare_pointer_ints, NULL);
+  slabbed_priority_queue = nexus_data_slabbed_priority_queue_create(1U, 0, 3U, nexus_test_compare_pointer_ints, NULL);
+  nexus_data_hashmap_config_initialize(&config, NEXUS_SIZEOF(int), 1U);
+  config.seed_is_set = TRUE;
+  config.seed        = 0;
+  error              = nexus_data_hashmap_create(&config, &hashmap);
+  if (error->code != NEXUS_PROGRAM_ERROR_SUCCESS()->code) {
+    return nexus_test_fail(980);
+  }
+  nexus_data_hashmap_config_initialize(&config, NEXUS_SIZEOF(int), 1U);
+  config.seed_is_set = TRUE;
+  config.seed        = 0;
+  error              = nexus_data_slabbed_hashmap_create(&config, 3U, &slabbed_hashmap);
+  if (error->code != NEXUS_PROGRAM_ERROR_SUCCESS()->code) {
+    return nexus_test_fail(980);
+  }
+  for (index = 0; index < 41; index++) {
+    if (setjmp(recovery_point) == 0) {
+      nexus_program_recovery_arm(&recovery_point);
+      switch (index) {
+      case 0:
+        nexus_data_array_set_pointer(&array, 0, NULL);
+        break;
+      case 1:
+        (void)nexus_data_array_pointer_at(&array, 0);
+        break;
+      case 2:
+        (void)nexus_data_list_append_pointer(list, NULL);
+        break;
+      case 3:
+        (void)nexus_data_list_pointer_at(list, 0);
+        break;
+      case 4:
+        nexus_data_list_insert_pointer(list, 0, NULL);
+        break;
+      case 5:
+        nexus_data_list_remove_pointer(list, 0, &output);
+        break;
+      case 6:
+        (void)nexus_data_list_pop_pointer(list, &output);
+        break;
+      case 7:
+        (void)nexus_data_stack_push_pointer(stack, NULL);
+        break;
+      case 8:
+        (void)nexus_data_stack_pop_pointer(stack, &output);
+        break;
+      case 9:
+        (void)nexus_data_stack_peek_pointer(stack);
+        break;
+      case 10:
+        (void)nexus_data_queue_push_pointer(queue, NULL);
+        break;
+      case 11:
+        (void)nexus_data_queue_pop_pointer(queue, &output);
+        break;
+      case 12:
+        (void)nexus_data_queue_peek_pointer(queue);
+        break;
+      case 13:
+        (void)nexus_data_ringbuffer_push_pointer(ringbuffer, NULL);
+        break;
+      case 14:
+        (void)nexus_data_ringbuffer_pop_pointer(ringbuffer, &output);
+        break;
+      case 15:
+        (void)nexus_data_ringbuffer_pointer_at(ringbuffer, 0);
+        break;
+      case 16:
+        (void)nexus_data_priority_queue_push_pointer(priority_queue, NULL);
+        break;
+      case 17:
+        (void)nexus_data_priority_queue_pop_pointer(priority_queue, &output);
+        break;
+      case 18:
+        (void)nexus_data_priority_queue_peek_pointer(priority_queue);
+        break;
+      case 19:
+        (void)nexus_data_slabbed_list_append_pointer(slabbed_list, NULL);
+        break;
+      case 20:
+        (void)nexus_data_slabbed_list_pointer_at(slabbed_list, 0);
+        break;
+      case 21:
+        nexus_data_slabbed_list_insert_pointer(slabbed_list, 0, NULL);
+        break;
+      case 22:
+        nexus_data_slabbed_list_remove_pointer(slabbed_list, 0, &output);
+        break;
+      case 23:
+        (void)nexus_data_slabbed_list_pop_pointer(slabbed_list, &output);
+        break;
+      case 24:
+        (void)nexus_data_slabbed_stack_push_pointer(slabbed_stack, NULL);
+        break;
+      case 25:
+        (void)nexus_data_slabbed_stack_pop_pointer(slabbed_stack, &output);
+        break;
+      case 26:
+        (void)nexus_data_slabbed_stack_peek_pointer(slabbed_stack);
+        break;
+      case 27:
+        (void)nexus_data_slabbed_queue_push_pointer(slabbed_queue, NULL);
+        break;
+      case 28:
+        (void)nexus_data_slabbed_queue_pop_pointer(slabbed_queue, &output);
+        break;
+      case 29:
+        (void)nexus_data_slabbed_queue_peek_pointer(slabbed_queue);
+        break;
+      case 30:
+        (void)nexus_data_slabbed_priority_queue_push_pointer(slabbed_priority_queue, NULL);
+        break;
+      case 31:
+        (void)nexus_data_slabbed_priority_queue_pop_pointer(slabbed_priority_queue, &output);
+        break;
+      case 32:
+        (void)nexus_data_slabbed_priority_queue_peek_pointer(slabbed_priority_queue);
+        break;
+      case 33:
+        nexus_data_hashmap_put_pointer(hashmap, &key, NULL);
+        break;
+      case 34:
+        (void)nexus_data_hashmap_get_pointer(hashmap, &key);
+        break;
+      case 35:
+        (void)nexus_data_hashmap_get_copy_pointer(hashmap, &key, &output);
+        break;
+      case 36:
+        (void)nexus_data_hashmap_remove_pointer(hashmap, &key, &output);
+        break;
+      case 37:
+        nexus_data_slabbed_hashmap_put_pointer(slabbed_hashmap, &key, NULL);
+        break;
+      case 38:
+        (void)nexus_data_slabbed_hashmap_get_pointer(slabbed_hashmap, &key);
+        break;
+      case 39:
+        (void)nexus_data_slabbed_hashmap_get_copy_pointer(slabbed_hashmap, &key, &output);
+        break;
+      case 40:
+        (void)nexus_data_slabbed_hashmap_remove_pointer(slabbed_hashmap, &key, &output);
+        break;
+      default:
+        return nexus_test_fail(981);
+      }
+      nexus_program_recovery_disarm();
+      return nexus_test_fail(982);
+    }
+    nexus_program_recovery_disarm();
+    error = nexus_program_recovery_last_error_get();
+    if (error == NULL || error->code != GLOBAL_NEXUS_PRECONDITION_VIOLATION) {
+      return nexus_test_fail(983);
+    }
+  }
+  nexus_data_list_destroy(list);
+  nexus_data_slabbed_list_destroy(slabbed_list);
+  nexus_data_stack_destroy(stack);
+  nexus_data_slabbed_stack_destroy(slabbed_stack);
+  nexus_data_queue_destroy(queue);
+  nexus_data_slabbed_queue_destroy(slabbed_queue);
+  nexus_data_ringbuffer_destroy(ringbuffer);
+  nexus_data_priority_queue_destroy(priority_queue);
+  nexus_data_slabbed_priority_queue_destroy(slabbed_priority_queue);
+  nexus_data_hashmap_destroy(hashmap);
+  nexus_data_slabbed_hashmap_destroy(slabbed_hashmap);
+  return 0;
+}
+#endif
+
 int main(void) {
   int result;
   result = nexus_test_hashes();
@@ -1306,6 +1934,16 @@ int main(void) {
     return result;
   }
   result = nexus_test_identity();
+  if (result != 0) {
+    return result;
+  }
+#if NEXUS_DEVELOPER_MODE
+  result = nexus_test_data_pointer_size_assertions();
+  if (result != 0) {
+    return result;
+  }
+#endif
+  result = nexus_test_data_pointers();
   if (result != 0) {
     return result;
   }

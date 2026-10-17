@@ -3193,6 +3193,26 @@ Errors: NULL arguments or index outside capacity is a programmer error.
 extern void nexus_data_array_get(const NexusDataArray *array, uint_large index, void *out_element);
 
 /*
+Summary: stores pointer itself in a pointer-sized array slot.
+Params: pointer  stored verbatim; NULL is accepted
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL array/storage, non-pointer-sized elements, or index outside capacity asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern void nexus_data_array_set_pointer(NexusDataArray *array, uint_large index, const void *pointer);
+
+/*
+Summary: returns the pointer value stored at index.
+Returns: stored pointer value, including NULL; not the slot address.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL array/storage, non-pointer-sized elements, or index outside capacity asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern void *nexus_data_array_pointer_at(const NexusDataArray *array, uint_large index);
+
+/*
 Summary: reverses every element in array in place.
 Errors: NULL array or invalid array storage is a programmer error (asserts).
 Complexity: O(capacity) time and O(1) storage.
@@ -3474,6 +3494,39 @@ Errors: NULL list is a programmer error (asserts).
 */
 extern boolean nexus_data_list_pop(NexusDataList *list, void *out_element);
 /*
+Summary: inserts pointer itself before index in a pointer-sized list.
+Params: pointer  stored verbatim; NULL is accepted
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL list, non-pointer-sized elements, invalid insertion index,
+  or allocation/capacity overflow asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(n) metadata shifts; may allocate on growth.
+*/
+extern void nexus_data_list_insert_pointer(NexusDataList *list, uint_large index, const void *pointer);
+
+/*
+Summary: removes index and optionally copies its stored pointer.
+Params: out_pointer  optional out; must not overlap list storage
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL list, non-pointer-sized elements, or index outside length asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(n) shifts; no allocation.
+*/
+extern void nexus_data_list_remove_pointer(NexusDataList *list, uint_large index, void **out_pointer);
+
+/*
+Summary: removes the last pointer and reports whether one existed.
+Params: out_pointer  optional out; must not overlap list storage;
+  left untouched when empty
+Returns: TRUE on removal, including a stored NULL; FALSE when empty.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL list or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern boolean nexus_data_list_pop_pointer(NexusDataList *list, void **out_pointer);
+
+/*
 Summary: sets list length to zero while retaining allocated capacity.
 Errors: NULL list is a programmer error (asserts).
 */
@@ -3544,6 +3597,41 @@ Errors: NULL stack is a programmer error (asserts).
 */
 extern void *nexus_data_stack_peek(NexusDataStack *stack);
 /*
+Summary: pushes pointer itself into a pointer-sized container.
+Params: pointer  stored verbatim; NULL is accepted
+Returns: borrowed pointer slot; invalidated by a later structural edit.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL stack, non-pointer-sized elements, or allocation/capacity overflow asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(1) amortized; may allocate on growth.
+*/
+extern void *nexus_data_stack_push_pointer(NexusDataStack *stack, const void *pointer);
+
+/*
+Summary: pops the next pointer and reports whether one existed.
+Params: out_pointer  optional out; must not overlap stack storage;
+  left untouched when empty
+Returns: TRUE on removal, including a stored NULL; FALSE when empty.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL stack or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern boolean nexus_data_stack_pop_pointer(NexusDataStack *stack, void **out_pointer);
+
+/*
+Summary: returns the next stored pointer without removing it.
+Description: use length_get or pop_pointer to distinguish an empty container
+  from a stored NULL.
+Returns: stored pointer value; NULL means empty or a stored NULL.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL stack or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern void *nexus_data_stack_peek_pointer(NexusDataStack *stack);
+
+/*
 Summary: removes all elements while retaining stack capacity.
 Errors: NULL stack is a programmer error (asserts).
 */
@@ -3601,6 +3689,45 @@ Ownership: pointer remains owned by queue.
 Errors: NULL queue is a programmer error (asserts).
 */
 extern void *nexus_data_queue_peek(NexusDataQueue *queue);
+
+/*
+Summary: enqueues a pointer value in a pointer-sized queue.
+Description: stores the pointer itself, without copying its pointee.
+Params: pointer  stored verbatim; NULL is accepted
+Returns: borrowed pointer to the stored pointer slot, valid until a later structural edit or destroy.
+Ownership: queue owns the slot; the pointee stays caller-owned.
+Errors: NULL queue, non-pointer-sized elements, or length/allocation overflow asserts.
+Thread-safety: caller synchronizes access to the container and pointees.
+Complexity: O(1) amortized; no allocation within reserved capacity.
+*/
+extern void *nexus_data_queue_push_pointer(NexusDataQueue *queue, const void *pointer);
+
+/*
+Summary: dequeues the oldest pointer and reports whether one existed.
+Description: TRUE also reports success when the dequeued pointer is NULL.
+Params: out_pointer  optional out; receives the stored pointer on success;
+  must not overlap queue-owned storage; left untouched when empty
+Returns: TRUE if an element was removed; FALSE when empty.
+Ownership: pointee stays caller-owned; no pointed-to resource is released.
+Errors: NULL queue or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to the container and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern boolean nexus_data_queue_pop_pointer(NexusDataQueue *queue, void **out_pointer);
+
+/*
+Summary: returns the oldest stored pointer without removing it.
+Description: returns the pointer value, not a pointer to its queue slot.
+  NULL means either an empty queue or a stored NULL; use length_get or
+  pop_pointer when those cases must be distinguished.
+Returns: stored pointer value, or NULL when empty.
+Ownership: pointee stays caller-owned; its lifetime is caller-controlled.
+Errors: NULL queue or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to the container and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern void *nexus_data_queue_peek_pointer(NexusDataQueue *queue);
+
 /*
 Summary: removes all elements while retaining queue capacity.
 Errors: NULL queue is a programmer error (asserts).
@@ -3667,6 +3794,39 @@ Complexity: O(1) when already aligned at slot 0, otherwise O(capacity) time and 
 */
 extern void *nexus_data_ringbuffer_linearize(NexusDataRingBuffer *ringbuffer);
 /*
+Summary: stores pointer itself, overwriting the oldest slot when full.
+Params: pointer  stored verbatim; NULL is accepted
+Returns: TRUE if the oldest pointer was overwritten; FALSE otherwise.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL ringbuffer or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern boolean nexus_data_ringbuffer_push_pointer(NexusDataRingBuffer *ringbuffer, const void *pointer);
+
+/*
+Summary: removes the oldest pointer and reports whether one existed.
+Params: out_pointer  optional out; must not overlap ringbuffer storage;
+  left untouched when empty
+Returns: TRUE on removal, including a stored NULL; FALSE when empty.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL ringbuffer or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern boolean nexus_data_ringbuffer_pop_pointer(NexusDataRingBuffer *ringbuffer, void **out_pointer);
+
+/*
+Summary: returns the stored pointer at logical_index, oldest first.
+Returns: stored pointer value, including NULL; not the slot address.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL ringbuffer, non-pointer-sized elements, or index outside length asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern void *nexus_data_ringbuffer_pointer_at(NexusDataRingBuffer *ringbuffer, uint_large logical_index);
+
+/*
 Summary: removes all retained elements without releasing ring storage.
 Errors: NULL ringbuffer is a programmer error (asserts).
 */
@@ -3715,6 +3875,43 @@ Ownership: pointer remains owned by queue.
 Errors: NULL queue is a programmer error (asserts).
 */
 extern void *nexus_data_priority_queue_peek(NexusDataPriorityQueue *queue);
+/*
+Summary: pushes pointer itself into a pointer-sized container.
+Description: comparator receives pointer slots, as with ordinary push;
+  it must dereference them to compare pointees.
+Params: pointer  stored verbatim; NULL is accepted
+Returns: borrowed pointer slot; invalidated by a later structural edit.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL queue, non-pointer-sized elements, or allocation/capacity overflow asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(log n) time; may allocate on growth.
+*/
+extern void *nexus_data_priority_queue_push_pointer(NexusDataPriorityQueue *queue, const void *pointer);
+
+/*
+Summary: pops the next pointer and reports whether one existed.
+Params: out_pointer  optional out; must not overlap queue storage;
+  left untouched when empty
+Returns: TRUE on removal, including a stored NULL; FALSE when empty.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL queue or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(log n) time; no allocation.
+*/
+extern boolean nexus_data_priority_queue_pop_pointer(NexusDataPriorityQueue *queue, void **out_pointer);
+
+/*
+Summary: returns the next stored pointer without removing it.
+Description: use length_get or pop_pointer to distinguish an empty container
+  from a stored NULL.
+Returns: stored pointer value; NULL means empty or a stored NULL.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL queue or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern void *nexus_data_priority_queue_peek_pointer(NexusDataPriorityQueue *queue);
+
 /*
 Summary: removes all elements while retaining queue capacity.
 Errors: NULL queue is a programmer error (asserts).
@@ -3922,6 +4119,60 @@ Returns: TRUE when key existed and was removed.
 Errors: NULL hashmap/key is a programmer error (asserts).
 */
 extern boolean nexus_data_hashmap_remove(NexusDataHashMap *hashmap, const void *key, void *out_value);
+/*
+Summary: inserts or replaces a pointer value without copying its pointee.
+Description: keys retain the ordinary fixed-width byte-key semantics.
+Params: key  borrowed key_size bytes; copied on insertion
+  pointer  stored verbatim; NULL is accepted
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL hashmap/key, non-pointer-sized values, or allocation/capacity overflow asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(key_size + 1) expected; O(n * key_size) worst case;
+  may allocate on growth.
+*/
+extern void nexus_data_hashmap_put_pointer(NexusDataHashMap *hashmap, const void *key, const void *pointer);
+
+/*
+Summary: returns the pointer value stored for key.
+Description: keys retain the ordinary fixed-width byte-key semantics.
+  use contains or get_copy_pointer to distinguish absent keys from NULL values.
+Params: key  borrowed key_size bytes; not retained
+Returns: stored pointer value; NULL means absent key or stored NULL.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL hashmap/key or non-pointer-sized values asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(key_size + 1) expected; O(n * key_size) worst case; no allocation.
+*/
+extern void *nexus_data_hashmap_get_pointer(const NexusDataHashMap *hashmap, const void *key);
+
+/*
+Summary: copies the stored pointer and reports whether key exists.
+Description: keys retain the ordinary fixed-width byte-key semantics.
+Params: key  borrowed key_size bytes; not retained
+  out_pointer  required out; must not overlap map storage;
+  left untouched when key is absent
+Returns: TRUE when key exists, including a NULL value; FALSE when absent.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL hashmap/key/out_pointer or non-pointer-sized values asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(key_size + 1) expected; O(n * key_size) worst case; no allocation.
+*/
+extern boolean nexus_data_hashmap_get_copy_pointer(const NexusDataHashMap *hashmap, const void *key, void **out_pointer);
+
+/*
+Summary: removes key and optionally copies its stored pointer.
+Description: keys retain the ordinary fixed-width byte-key semantics.
+Params: key  borrowed key_size bytes; not retained
+  out_pointer  optional out; must not overlap map storage;
+  left untouched when key is absent
+Returns: TRUE when key was removed, including a NULL value; FALSE when absent.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL hashmap/key or non-pointer-sized values asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(key_size + 1) expected; O(n * key_size) worst case; no allocation.
+*/
+extern boolean nexus_data_hashmap_remove_pointer(NexusDataHashMap *hashmap, const void *key, void **out_pointer);
+
 /*
 Summary: removes all entries while retaining allocated table storage.
 Errors: NULL hashmap is a programmer error (asserts).
@@ -4160,6 +4411,39 @@ Complexity: O(1) time; no allocation.
 extern boolean nexus_data_slabbed_list_pop(NexusDataSlabbedList *list, void *out_element);
 
 /*
+Summary: inserts pointer itself before index in a pointer-sized list.
+Params: pointer  stored verbatim; NULL is accepted
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL list, non-pointer-sized elements, invalid insertion index,
+  or allocation/capacity overflow asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(n) metadata shifts; may allocate on growth.
+*/
+extern void nexus_data_slabbed_list_insert_pointer(NexusDataSlabbedList *list, uint_large index, const void *pointer);
+
+/*
+Summary: removes index and optionally copies its stored pointer.
+Params: out_pointer  optional out; must not overlap list storage
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL list, non-pointer-sized elements, or index outside length asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(n) shifts; no allocation.
+*/
+extern void nexus_data_slabbed_list_remove_pointer(NexusDataSlabbedList *list, uint_large index, void **out_pointer);
+
+/*
+Summary: removes the last pointer and reports whether one existed.
+Params: out_pointer  optional out; must not overlap list storage;
+  left untouched when empty
+Returns: TRUE on removal, including a stored NULL; FALSE when empty.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL list or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern boolean nexus_data_slabbed_list_pop_pointer(NexusDataSlabbedList *list, void **out_pointer);
+
+/*
 Summary: removes every element while retaining slabs and metadata.
 Ownership: invalidates all element pointers; releases no pointed-to resources.
 Errors: NULL list asserts.
@@ -4261,6 +4545,41 @@ Thread-safety: caller synchronizes access to the container and payloads.
 extern void *nexus_data_slabbed_stack_peek(NexusDataSlabbedStack *stack);
 
 /*
+Summary: pushes pointer itself into a pointer-sized container.
+Params: pointer  stored verbatim; NULL is accepted
+Returns: borrowed pointer slot; valid until removal, clear, or destroy.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL stack, non-pointer-sized elements, or allocation/capacity overflow asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(1) amortized; may allocate on growth.
+*/
+extern void *nexus_data_slabbed_stack_push_pointer(NexusDataSlabbedStack *stack, const void *pointer);
+
+/*
+Summary: pops the next pointer and reports whether one existed.
+Params: out_pointer  optional out; must not overlap stack storage;
+  left untouched when empty
+Returns: TRUE on removal, including a stored NULL; FALSE when empty.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL stack or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern boolean nexus_data_slabbed_stack_pop_pointer(NexusDataSlabbedStack *stack, void **out_pointer);
+
+/*
+Summary: returns the next stored pointer without removing it.
+Description: use length_get or pop_pointer to distinguish an empty container
+  from a stored NULL.
+Returns: stored pointer value; NULL means empty or a stored NULL.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL stack or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern void *nexus_data_slabbed_stack_peek_pointer(NexusDataSlabbedStack *stack);
+
+/*
 Summary: removes every element while retaining slabs and metadata.
 Ownership: invalidates all element pointers; releases no pointed-to resources.
 Errors: NULL stack asserts.
@@ -4348,6 +4667,44 @@ Errors: NULL queue asserts.
 Thread-safety: caller synchronizes access to the container and payloads.
 */
 extern void *nexus_data_slabbed_queue_peek(NexusDataSlabbedQueue *queue);
+
+/*
+Summary: enqueues a pointer value in a pointer-sized queue.
+Description: stores the pointer itself, without copying its pointee.
+Params: pointer  stored verbatim; NULL is accepted
+Returns: borrowed pointer to the stored pointer slot, valid until its removal, clear, or destroy.
+Ownership: queue owns the slot; the pointee stays caller-owned.
+Errors: NULL queue, non-pointer-sized elements, or length/allocation overflow asserts.
+Thread-safety: caller synchronizes access to the container and pointees.
+Complexity: O(1) amortized; no allocation within reserved capacity.
+*/
+extern void *nexus_data_slabbed_queue_push_pointer(NexusDataSlabbedQueue *queue, const void *pointer);
+
+/*
+Summary: dequeues the oldest pointer and reports whether one existed.
+Description: TRUE also reports success when the dequeued pointer is NULL.
+Params: out_pointer  optional out; receives the stored pointer on success;
+  must not overlap queue-owned storage; left untouched when empty
+Returns: TRUE if an element was removed; FALSE when empty.
+Ownership: pointee stays caller-owned; no pointed-to resource is released.
+Errors: NULL queue or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to the container and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern boolean nexus_data_slabbed_queue_pop_pointer(NexusDataSlabbedQueue *queue, void **out_pointer);
+
+/*
+Summary: returns the oldest stored pointer without removing it.
+Description: returns the pointer value, not a pointer to its queue slot.
+  NULL means either an empty queue or a stored NULL; use length_get or
+  pop_pointer when those cases must be distinguished.
+Returns: stored pointer value, or NULL when empty.
+Ownership: pointee stays caller-owned; its lifetime is caller-controlled.
+Errors: NULL queue or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to the container and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern void *nexus_data_slabbed_queue_peek_pointer(NexusDataSlabbedQueue *queue);
 
 /*
 Summary: removes every element while retaining slabs and metadata.
@@ -4440,6 +4797,43 @@ Errors: NULL queue asserts.
 Thread-safety: caller synchronizes access to the container and payloads.
 */
 extern void *nexus_data_slabbed_priority_queue_peek(NexusDataSlabbedPriorityQueue *queue);
+
+/*
+Summary: pushes pointer itself into a pointer-sized container.
+Description: comparator receives pointer slots, as with ordinary push;
+  it must dereference them to compare pointees.
+Params: pointer  stored verbatim; NULL is accepted
+Returns: borrowed pointer slot; valid until removal, clear, or destroy.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL queue, non-pointer-sized elements, or allocation/capacity overflow asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(log n) time; may allocate on growth.
+*/
+extern void *nexus_data_slabbed_priority_queue_push_pointer(NexusDataSlabbedPriorityQueue *queue, const void *pointer);
+
+/*
+Summary: pops the next pointer and reports whether one existed.
+Params: out_pointer  optional out; must not overlap queue storage;
+  left untouched when empty
+Returns: TRUE on removal, including a stored NULL; FALSE when empty.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL queue or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(log n) time; no allocation.
+*/
+extern boolean nexus_data_slabbed_priority_queue_pop_pointer(NexusDataSlabbedPriorityQueue *queue, void **out_pointer);
+
+/*
+Summary: returns the next stored pointer without removing it.
+Description: use length_get or pop_pointer to distinguish an empty container
+  from a stored NULL.
+Returns: stored pointer value; NULL means empty or a stored NULL.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL queue or non-pointer-sized elements asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(1) time; no allocation.
+*/
+extern void *nexus_data_slabbed_priority_queue_peek_pointer(NexusDataSlabbedPriorityQueue *queue);
 
 /*
 Summary: removes every element while retaining slabs and metadata.
@@ -4601,6 +4995,60 @@ Complexity: expected O(1); worst-case O(n); no allocation.
 extern boolean nexus_data_slabbed_hashmap_remove(NexusDataSlabbedHashMap *hashmap, const void *key, void *out_value);
 
 /*
+Summary: inserts or replaces a pointer value without copying its pointee.
+Description: keys retain the ordinary fixed-width byte-key semantics.
+Params: key  borrowed key_size bytes; copied on insertion
+  pointer  stored verbatim; NULL is accepted
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL hashmap/key, non-pointer-sized values, or allocation/capacity overflow asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(key_size + 1) expected; O(n * key_size) worst case;
+  may allocate on growth.
+*/
+extern void nexus_data_slabbed_hashmap_put_pointer(NexusDataSlabbedHashMap *hashmap, const void *key, const void *pointer);
+
+/*
+Summary: returns the pointer value stored for key.
+Description: keys retain the ordinary fixed-width byte-key semantics.
+  use contains or get_copy_pointer to distinguish absent keys from NULL values.
+Params: key  borrowed key_size bytes; not retained
+Returns: stored pointer value; NULL means absent key or stored NULL.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL hashmap/key or non-pointer-sized values asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(key_size + 1) expected; O(n * key_size) worst case; no allocation.
+*/
+extern void *nexus_data_slabbed_hashmap_get_pointer(const NexusDataSlabbedHashMap *hashmap, const void *key);
+
+/*
+Summary: copies the stored pointer and reports whether key exists.
+Description: keys retain the ordinary fixed-width byte-key semantics.
+Params: key  borrowed key_size bytes; not retained
+  out_pointer  required out; must not overlap map storage;
+  left untouched when key is absent
+Returns: TRUE when key exists, including a NULL value; FALSE when absent.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL hashmap/key/out_pointer or non-pointer-sized values asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(key_size + 1) expected; O(n * key_size) worst case; no allocation.
+*/
+extern boolean nexus_data_slabbed_hashmap_get_copy_pointer(const NexusDataSlabbedHashMap *hashmap, const void *key, void **out_pointer);
+
+/*
+Summary: removes key and optionally copies its stored pointer.
+Description: keys retain the ordinary fixed-width byte-key semantics.
+Params: key  borrowed key_size bytes; not retained
+  out_pointer  optional out; must not overlap map storage;
+  left untouched when key is absent
+Returns: TRUE when key was removed, including a NULL value; FALSE when absent.
+Ownership: pointees remain caller-owned; no pointed-to resource is released.
+Errors: NULL hashmap/key or non-pointer-sized values asserts.
+Thread-safety: caller synchronizes access to storage and pointees.
+Complexity: O(key_size + 1) expected; O(n * key_size) worst case; no allocation.
+*/
+extern boolean nexus_data_slabbed_hashmap_remove_pointer(NexusDataSlabbedHashMap *hashmap, const void *key, void **out_pointer);
+
+/*
 Summary: removes every entry and retains slab/table capacity.
 Ownership: invalidates all entry pointers and enumerators.
 Errors: NULL hashmap asserts.
@@ -4716,6 +5164,15 @@ static NEXUS_MAYBE_UNUSED uint64 nexus_strings_string_length_get(const char *str
     ++cursor;
 
   return (uint64)(cursor - string);
+}
+
+/*
+Summary: borrows string as read-only bytes without copying; NULL string asserts.
+*/
+static NEXUS_MAYBE_UNUSED const byte *nexus_strings_string_bytes_get(const char *string) {
+  NEXUS_PROGRAM_PRECONDITION_ALWAYS(string != NULL, "String must not be null.");
+
+  return (const byte *)string;
 }
 
 /*
