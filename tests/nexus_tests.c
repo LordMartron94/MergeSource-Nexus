@@ -1234,6 +1234,245 @@ static int nexus_test_data_slabbed_reserved(void) {
 }
 #endif
 
+static int nexus_test_data_reverse_sequences(void) {
+  NexusDataList           *list;
+  NexusDataStack          *stack;
+  NexusDataSlabbedList    *slabbed_list;
+  NexusDataSlabbedStack   *slabbed_stack;
+  NexusDataLinkedList      linked_list;
+  NexusDataLinkedListNode  nodes[9];
+  NexusDataLinkedListNode *node;
+  byte                     values[9][3];
+  byte                     output[3];
+  byte                    *element;
+  void                    *saved_list[9];
+  void                    *saved_stack[9];
+  void                    *list_storage;
+  void                    *stack_storage;
+  uint_large               count;
+  uint_large               index;
+  uint_large               expected;
+  uint_large               pass;
+  uint_large               list_capacity;
+  uint_large               slabbed_capacity;
+
+  /* Odd-width payloads catch swaps that accidentally assume word alignment. */
+  for (index = 0; index < 9U; index++) {
+    values[index][0] = (byte)index;
+    values[index][1] = (byte)(index + 10U);
+    values[index][2] = (byte)(index + 20U);
+  }
+  for (count = 0; count <= 9U; count++) {
+    list          = nexus_data_list_create(3U, 0);
+    stack         = nexus_data_stack_create(3U, 0);
+    slabbed_list  = nexus_data_slabbed_list_create(3U, 0, 3U);
+    slabbed_stack = nexus_data_slabbed_stack_create(3U, 0, 3U);
+    nexus_data_linked_list_initialize(&linked_list);
+    for (index = 0; index < count; index++) {
+      nexus_data_list_append(list, values[index]);
+      nexus_data_stack_push(stack, values[index]);
+      saved_list[index]  = nexus_data_slabbed_list_append(slabbed_list, values[index]);
+      saved_stack[index] = nexus_data_slabbed_stack_push(slabbed_stack, values[index]);
+      nexus_data_linked_list_node_initialize(&nodes[index]);
+      nexus_data_linked_list_push_back(&linked_list, &nodes[index]);
+    }
+    list_storage     = nexus_data_list_data_get(list);
+    stack_storage    = nexus_data_stack_data_get(stack);
+    list_capacity    = nexus_data_list_capacity_get(list);
+    slabbed_capacity = nexus_data_slabbed_list_capacity_get(slabbed_list);
+    for (pass = 0; pass < 3U; pass++) {
+#if NEXUS_MEMORY_TRACING
+      nexus_test_slabbed_storage_operations = 0;
+      nexus_memory_trace_function_set(nexus_test_slabbed_allocation_trace);
+#endif
+      nexus_data_list_reverse(list);
+      nexus_data_stack_reverse(stack);
+      nexus_data_slabbed_list_reverse(slabbed_list);
+      nexus_data_slabbed_stack_reverse(slabbed_stack);
+      nexus_data_linked_list_reverse(&linked_list);
+#if NEXUS_MEMORY_TRACING
+      nexus_memory_trace_function_set(NULL);
+      if (nexus_test_slabbed_storage_operations != 0) {
+        return nexus_test_fail(1100);
+      }
+#endif
+      if (nexus_data_list_length_get(list) != count || nexus_data_stack_length_get(stack) != count ||
+          nexus_data_slabbed_list_length_get(slabbed_list) != count || nexus_data_slabbed_stack_length_get(slabbed_stack) != count ||
+          linked_list.length != count || nexus_data_list_capacity_get(list) != list_capacity ||
+          nexus_data_slabbed_list_capacity_get(slabbed_list) != slabbed_capacity || nexus_data_list_data_get(list) != list_storage ||
+          nexus_data_stack_data_get(stack) != stack_storage) {
+        return nexus_test_fail(1101);
+      }
+      node = linked_list.first;
+      for (index = 0; index < count; index++) {
+        expected = pass == 1U ? index : count - 1U - index;
+        element  = (byte *)nexus_data_list_at(list, index);
+        if (element[0] != values[expected][0] || element[1] != values[expected][1] || element[2] != values[expected][2] ||
+            nexus_data_slabbed_list_at(slabbed_list, index) != saved_list[expected]) {
+          return nexus_test_fail(1102);
+        }
+        element = (byte *)saved_list[index];
+        if (element[0] != values[index][0] || element[1] != values[index][1] || element[2] != values[index][2]) {
+          return nexus_test_fail(1103);
+        }
+        element = (byte *)saved_stack[index];
+        if (element[0] != values[index][0] || element[1] != values[index][1] || element[2] != values[index][2]) {
+          return nexus_test_fail(1104);
+        }
+        if (node != &nodes[expected] || node->owner != &linked_list ||
+            node->previous != (index == 0 ? NULL : &nodes[pass == 1U ? index - 1U : expected + 1U])) {
+          return nexus_test_fail(1105);
+        }
+        node = node->next;
+      }
+      if (node != NULL || (count == 0 && (linked_list.first != NULL || linked_list.last != NULL)) ||
+          (count > 0 && linked_list.last != &nodes[pass == 1U ? count - 1U : 0])) {
+        return nexus_test_fail(1106);
+      }
+    }
+    /* Pop order reverses too, and every slabbed pointer keeps its identity. */
+    for (index = 0; index < count; index++) {
+      if (nexus_data_slabbed_stack_peek(slabbed_stack) != saved_stack[index] || !nexus_data_stack_pop(stack, output) ||
+          output[0] != values[index][0] || output[1] != values[index][1] || output[2] != values[index][2] ||
+          !nexus_data_slabbed_stack_pop(slabbed_stack, output) || output[0] != values[index][0] || output[1] != values[index][1] ||
+          output[2] != values[index][2] || nexus_data_linked_list_pop_front(&linked_list) != &nodes[count - 1U - index]) {
+        return nexus_test_fail(1107);
+      }
+    }
+    nexus_data_list_append(list, values[0]);
+    nexus_data_slabbed_list_append(slabbed_list, values[0]);
+    nexus_data_list_reverse(list);
+    nexus_data_slabbed_list_reverse(slabbed_list);
+    if (*(byte *)nexus_data_list_at(list, 0) != 0 || *(byte *)nexus_data_slabbed_list_at(slabbed_list, 0) != 0) {
+      return nexus_test_fail(1108);
+    }
+    nexus_data_linked_list_clear(&linked_list);
+    nexus_data_list_destroy(list);
+    nexus_data_stack_destroy(stack);
+    nexus_data_slabbed_list_destroy(slabbed_list);
+    nexus_data_slabbed_stack_destroy(slabbed_stack);
+  }
+  return 0;
+}
+
+static int nexus_test_data_reverse_circular(void) {
+  NexusDataQueue        *queue;
+  NexusDataSlabbedQueue *slabbed_queue;
+  NexusDataRingBuffer   *ringbuffer;
+  void                  *saved[16];
+  uint_large             capacity;
+  uint_large             offset;
+  uint_large             count;
+  uint_large             index;
+  uint_large             pass;
+  uint_large             slabbed_capacity;
+  int                    value;
+  int                    output;
+  int                    first;
+  int                    expected;
+
+  queue         = nexus_data_queue_create(NEXUS_SIZEOF(int), 0);
+  slabbed_queue = nexus_data_slabbed_queue_create(NEXUS_SIZEOF(int), 0, 3U);
+  nexus_data_queue_reverse(queue);
+  nexus_data_slabbed_queue_reverse(slabbed_queue);
+  value = 42;
+  nexus_data_queue_push(queue, &value);
+  nexus_data_slabbed_queue_push(slabbed_queue, &value);
+  nexus_data_queue_reverse(queue);
+  nexus_data_slabbed_queue_reverse(slabbed_queue);
+  if (!nexus_data_queue_pop(queue, &output) || output != 42 || !nexus_data_slabbed_queue_pop(slabbed_queue, &output) || output != 42) {
+    return nexus_test_fail(1109);
+  }
+  nexus_data_queue_destroy(queue);
+  nexus_data_slabbed_queue_destroy(slabbed_queue);
+
+  /* Exercise every occupancy and head offset, including partial wraps. */
+  for (capacity = 1U; capacity <= 8U; capacity *= 2U) {
+    for (offset = 0; offset < capacity; offset++) {
+      for (count = 0; count <= capacity; count++) {
+        queue         = nexus_data_queue_create(NEXUS_SIZEOF(int), capacity);
+        slabbed_queue = nexus_data_slabbed_queue_create(NEXUS_SIZEOF(int), capacity, 3U);
+        ringbuffer    = nexus_data_ringbuffer_create(NEXUS_SIZEOF(int), capacity);
+        for (index = 0; index < capacity + offset; index++) {
+          if (index >= capacity) {
+            nexus_data_queue_pop(queue, NULL);
+            nexus_data_slabbed_queue_pop(slabbed_queue, NULL);
+          }
+          value = (int)index;
+          nexus_data_queue_push(queue, &value);
+          saved[index] = nexus_data_slabbed_queue_push(slabbed_queue, &value);
+          nexus_data_ringbuffer_push(ringbuffer, &value);
+        }
+        for (index = 0; index < capacity - count; index++) {
+          nexus_data_queue_pop(queue, NULL);
+          nexus_data_slabbed_queue_pop(slabbed_queue, NULL);
+          nexus_data_ringbuffer_pop(ringbuffer, NULL);
+        }
+        first            = (int)(capacity + offset - count);
+        slabbed_capacity = nexus_data_slabbed_queue_capacity_get(slabbed_queue);
+        for (pass = 0; pass < 3U; pass++) {
+#if NEXUS_MEMORY_TRACING
+          nexus_test_slabbed_storage_operations = 0;
+          nexus_memory_trace_function_set(nexus_test_slabbed_allocation_trace);
+#endif
+          nexus_data_queue_reverse(queue);
+          nexus_data_slabbed_queue_reverse(slabbed_queue);
+          nexus_data_ringbuffer_reverse(ringbuffer);
+#if NEXUS_MEMORY_TRACING
+          nexus_memory_trace_function_set(NULL);
+          if (nexus_test_slabbed_storage_operations != 0) {
+            return nexus_test_fail(1110);
+          }
+#endif
+          if (nexus_data_queue_length_get(queue) != count || nexus_data_slabbed_queue_length_get(slabbed_queue) != count ||
+              nexus_data_ringbuffer_length_get(ringbuffer) != count || nexus_data_ringbuffer_capacity_get(ringbuffer) != capacity ||
+              nexus_data_slabbed_queue_capacity_get(slabbed_queue) != slabbed_capacity) {
+            return nexus_test_fail(1111);
+          }
+          if (count > 0) {
+            expected = first + (pass == 1U ? 0 : (int)count - 1);
+            if (*(int *)nexus_data_queue_peek(queue) != expected || nexus_data_slabbed_queue_peek(slabbed_queue) != saved[expected]) {
+              return nexus_test_fail(1112);
+            }
+          }
+          for (index = 0; index < count; index++) {
+            expected = first + (int)(pass == 1U ? index : count - 1U - index);
+            if (*(int *)nexus_data_ringbuffer_at(ringbuffer, index) != expected || *(int *)saved[first + (int)index] != first + (int)index) {
+              return nexus_test_fail(1113);
+            }
+          }
+        }
+        /* Append after reversal, also verifying the ring's overwrite policy. */
+        value = 99;
+        nexus_data_queue_push(queue, &value);
+        nexus_data_slabbed_queue_push(slabbed_queue, &value);
+        if (nexus_data_ringbuffer_push(ringbuffer, &value) != (count == capacity)) {
+          return nexus_test_fail(1114);
+        }
+        for (index = 0; index < count; index++) {
+          expected = first + (int)(count - 1U - index);
+          if (!nexus_data_queue_pop(queue, &output) || output != expected || nexus_data_slabbed_queue_peek(slabbed_queue) != saved[expected] ||
+              !nexus_data_slabbed_queue_pop(slabbed_queue, &output) || output != expected) {
+            return nexus_test_fail(1115);
+          }
+          if (!(count == capacity && index == 0) && (!nexus_data_ringbuffer_pop(ringbuffer, &output) || output != expected)) {
+            return nexus_test_fail(1116);
+          }
+        }
+        if (!nexus_data_queue_pop(queue, &output) || output != 99 || !nexus_data_slabbed_queue_pop(slabbed_queue, &output) || output != 99 ||
+            !nexus_data_ringbuffer_pop(ringbuffer, &output) || output != 99 || nexus_data_queue_pop(queue, NULL) ||
+            nexus_data_slabbed_queue_pop(slabbed_queue, NULL) || nexus_data_ringbuffer_pop(ringbuffer, NULL)) {
+          return nexus_test_fail(1117);
+        }
+        nexus_data_queue_destroy(queue);
+        nexus_data_slabbed_queue_destroy(slabbed_queue);
+        nexus_data_ringbuffer_destroy(ringbuffer);
+      }
+    }
+  }
+  return 0;
+}
+
 static int nexus_test_data_hashmap_rehash(boolean force_collisions) {
   NexusDataHashMapConfig     config;
   NexusDataHashMap          *hashmap;
@@ -2002,6 +2241,14 @@ int main(void) {
     return result;
   }
   result = nexus_test_data_bitset();
+  if (result != 0) {
+    return result;
+  }
+  result = nexus_test_data_reverse_sequences();
+  if (result != 0) {
+    return result;
+  }
+  result = nexus_test_data_reverse_circular();
   if (result != 0) {
     return result;
   }

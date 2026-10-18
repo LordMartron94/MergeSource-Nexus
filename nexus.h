@@ -3527,6 +3527,20 @@ Complexity: O(1) time; no allocation.
 extern boolean nexus_data_list_pop_pointer(NexusDataList *list, void **out_pointer);
 
 /*
+Summary: reverses list element order in place.
+Description:
+  Reverses logical index order. Length, capacity, and the storage
+  allocation are unchanged; empty and single-element lists are no-ops.
+Ownership:
+  Borrows list; element slots stay allocated but may hold different
+  elements after reversal. Stored pointees remain caller-owned.
+Errors: NULL list is a programmer error (asserts).
+Thread-safety: caller synchronizes access to list and its elements.
+Complexity: O(n * element_size) time and O(1) extra storage; no allocation.
+*/
+extern void nexus_data_list_reverse(NexusDataList *list);
+
+/*
 Summary: sets list length to zero while retaining allocated capacity.
 Errors: NULL list is a programmer error (asserts).
 */
@@ -3632,6 +3646,20 @@ Complexity: O(1) time; no allocation.
 extern void *nexus_data_stack_peek_pointer(NexusDataStack *stack);
 
 /*
+Summary: reverses stack element order in place.
+Description:
+  Reverses the current pop order; the bottom element becomes the top.
+  Length, capacity, and the storage allocation are unchanged.
+Ownership:
+  Borrows stack; element slots stay allocated but may hold different
+  elements after reversal. Stored pointees remain caller-owned.
+Errors: NULL stack is a programmer error (asserts).
+Thread-safety: caller synchronizes access to stack and its elements.
+Complexity: O(n * element_size) time and O(1) extra storage; no allocation.
+*/
+extern void nexus_data_stack_reverse(NexusDataStack *stack);
+
+/*
 Summary: removes all elements while retaining stack capacity.
 Errors: NULL stack is a programmer error (asserts).
 */
@@ -3727,6 +3755,20 @@ Thread-safety: caller synchronizes access to the container and pointees.
 Complexity: O(1) time; no allocation.
 */
 extern void *nexus_data_queue_peek_pointer(NexusDataQueue *queue);
+
+/*
+Summary: reverses queue element order in place.
+Description:
+  Reverses the current pop order, including wrapped live elements.
+  Length, capacity, and the storage allocation are unchanged.
+Ownership:
+  Borrows queue; element slots stay allocated but may hold different
+  elements after reversal. Stored pointees remain caller-owned.
+Errors: NULL queue is a programmer error (asserts).
+Thread-safety: caller synchronizes access to queue and its elements.
+Complexity: O(n * element_size) time and O(1) extra storage; no allocation.
+*/
+extern void nexus_data_queue_reverse(NexusDataQueue *queue);
 
 /*
 Summary: removes all elements while retaining queue capacity.
@@ -3825,6 +3867,20 @@ Thread-safety: caller synchronizes access to storage and pointees.
 Complexity: O(1) time; no allocation.
 */
 extern void *nexus_data_ringbuffer_pointer_at(NexusDataRingBuffer *ringbuffer, uint_large logical_index);
+
+/*
+Summary: reverses ringbuffer element order in place.
+Description:
+  Reverses the current pop order, including wrapped live elements.
+  Length, capacity, and the storage allocation are unchanged.
+Ownership:
+  Borrows ringbuffer; element slots stay allocated but may hold different
+  elements after reversal. Stored pointees remain caller-owned.
+Errors: NULL ringbuffer is a programmer error (asserts).
+Thread-safety: caller synchronizes access to ringbuffer and its elements.
+Complexity: O(n * element_size) time and O(1) extra storage; no allocation.
+*/
+extern void nexus_data_ringbuffer_reverse(NexusDataRingBuffer *ringbuffer);
 
 /*
 Summary: removes all retained elements without releasing ring storage.
@@ -3990,6 +4046,19 @@ Returns: detached borrowed node, still owned by its containing object.
 Errors: NULL list is a programmer error (asserts).
 */
 extern NexusDataLinkedListNode *nexus_data_linked_list_pop_back(NexusDataLinkedList *list);
+/*
+Summary: reverses list element order in place.
+Description:
+  Exchanges first/last and every node's next/previous links. Length
+  and node ownership are unchanged; empty and single-node lists are no-ops.
+Ownership:
+  Borrows list and its caller-owned nodes; no payload is moved or freed.
+Errors: NULL list is a programmer error (asserts).
+Thread-safety: caller synchronizes access to list and its elements.
+Complexity: O(n) time and O(1) extra storage; no allocation.
+*/
+extern void nexus_data_linked_list_reverse(NexusDataLinkedList *list);
+
 /*
 Summary: detaches every node and resets list length to zero.
 Errors: NULL list is a programmer error (asserts).
@@ -4444,6 +4513,20 @@ Complexity: O(1) time; no allocation.
 extern boolean nexus_data_slabbed_list_pop_pointer(NexusDataSlabbedList *list, void **out_pointer);
 
 /*
+Summary: reverses list element order in place.
+Description:
+  Reverses logical index order. Length, capacity, and the storage
+  allocation are unchanged; empty and single-element lists are no-ops.
+  Only ordering references move; payload bytes and addresses never move.
+Ownership:
+  Borrows list; all surviving element pointers retain their identity.
+Errors: NULL list is a programmer error (asserts).
+Thread-safety: caller synchronizes access to list and its elements.
+Complexity: O(n) pointer swaps and O(1) extra storage; no allocation.
+*/
+extern void nexus_data_slabbed_list_reverse(NexusDataSlabbedList *list);
+
+/*
 Summary: removes every element while retaining slabs and metadata.
 Ownership: invalidates all element pointers; releases no pointed-to resources.
 Errors: NULL list asserts.
@@ -4580,6 +4663,20 @@ Complexity: O(1) time; no allocation.
 extern void *nexus_data_slabbed_stack_peek_pointer(NexusDataSlabbedStack *stack);
 
 /*
+Summary: reverses stack element order in place.
+Description:
+  Reverses the current pop order; the bottom element becomes the top.
+  Length, capacity, and the storage allocation are unchanged.
+  Only ordering references move; payload bytes and addresses never move.
+Ownership:
+  Borrows stack; all surviving element pointers retain their identity.
+Errors: NULL stack is a programmer error (asserts).
+Thread-safety: caller synchronizes access to stack and its elements.
+Complexity: O(n) pointer swaps and O(1) extra storage; no allocation.
+*/
+extern void nexus_data_slabbed_stack_reverse(NexusDataSlabbedStack *stack);
+
+/*
 Summary: removes every element while retaining slabs and metadata.
 Ownership: invalidates all element pointers; releases no pointed-to resources.
 Errors: NULL stack asserts.
@@ -4705,6 +4802,20 @@ Thread-safety: caller synchronizes access to the container and pointees.
 Complexity: O(1) time; no allocation.
 */
 extern void *nexus_data_slabbed_queue_peek_pointer(NexusDataSlabbedQueue *queue);
+
+/*
+Summary: reverses queue element order in place.
+Description:
+  Reverses the current pop order, including wrapped live elements.
+  Length, capacity, and the storage allocation are unchanged.
+  Only ordering references move; payload bytes and addresses never move.
+Ownership:
+  Borrows queue; all surviving element pointers retain their identity.
+Errors: NULL queue is a programmer error (asserts).
+Thread-safety: caller synchronizes access to queue and its elements.
+Complexity: O(n) pointer swaps and O(1) extra storage; no allocation.
+*/
+extern void nexus_data_slabbed_queue_reverse(NexusDataSlabbedQueue *queue);
 
 /*
 Summary: removes every element while retaining slabs and metadata.

@@ -793,6 +793,11 @@ boolean nexus_data_list_pop_pointer(NexusDataList *list, void **out_pointer) {
   return nexus_data_list_pop(list, (void *)out_pointer);
 }
 
+void nexus_data_list_reverse(NexusDataList *list) {
+  NEXUS_PROGRAM_PRECONDITION(list != NULL, "data_list_reverse: list is NULL");
+  n_data_buffer_reverse_range(&list->buffer, 0, list->buffer.length);
+}
+
 void nexus_data_list_clear(NexusDataList *list) {
   NEXUS_PROGRAM_PRECONDITION(list != NULL, "data_list_clear: list is NULL");
   list->buffer.length = 0;
@@ -986,6 +991,11 @@ void *nexus_data_stack_peek_pointer(NexusDataStack *stack) {
   return pointer;
 }
 
+void nexus_data_stack_reverse(NexusDataStack *stack) {
+  NEXUS_PROGRAM_PRECONDITION(stack != NULL, "data_stack_reverse: stack is NULL");
+  n_data_buffer_reverse_range(&stack->buffer, 0, stack->buffer.length);
+}
+
 void nexus_data_stack_clear(NexusDataStack *stack) {
   NEXUS_PROGRAM_PRECONDITION(stack != NULL, "data_stack_clear: stack is NULL");
   stack->buffer.length = 0;
@@ -1112,6 +1122,31 @@ void *nexus_data_queue_peek_pointer(NexusDataQueue *queue) {
   return slot == NULL ? NULL : *(void *const *)slot;
 }
 
+void nexus_data_queue_reverse(NexusDataQueue *queue) {
+  uint_large left;
+  uint_large right;
+  uint_large remaining;
+
+  NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_queue_reverse: queue is NULL");
+
+  if (queue->buffer.length < 2U) {
+    return;
+  }
+
+  left  = queue->head;
+  right = queue->buffer.length - 1U;
+  /* Map the last live index without overflowing head + index. */
+  right = right >= queue->buffer.capacity - left ? right - (queue->buffer.capacity - left) : left + right;
+  for (remaining = queue->buffer.length / 2U; remaining > 0; remaining--) {
+    n_data_elements_swap(n_data_buffer_at(&queue->buffer, left), n_data_buffer_at(&queue->buffer, right), queue->buffer.element_size);
+    left++;
+    if (left == queue->buffer.capacity) {
+      left = 0;
+    }
+    right = right == 0 ? queue->buffer.capacity - 1U : right - 1U;
+  }
+}
+
 void nexus_data_queue_clear(NexusDataQueue *queue) {
   NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_queue_clear: queue is NULL");
   queue->buffer.length = 0;
@@ -1227,6 +1262,31 @@ void *nexus_data_ringbuffer_pointer_at(NexusDataRingBuffer *ringbuffer, uint_lar
                              "data_ringbuffer_pointer_at: element_size is not pointer-sized");
   nexus_memory_bytes_copy(nexus_data_ringbuffer_at(ringbuffer, logical_index), (void *)&pointer, NEXUS_SIZEOF(pointer));
   return pointer;
+}
+
+void nexus_data_ringbuffer_reverse(NexusDataRingBuffer *ringbuffer) {
+  uint_large left;
+  uint_large right;
+  uint_large remaining;
+
+  NEXUS_PROGRAM_PRECONDITION(ringbuffer != NULL, "data_ringbuffer_reverse: ringbuffer is NULL");
+
+  if (ringbuffer->buffer.length < 2U) {
+    return;
+  }
+
+  left  = ringbuffer->head;
+  right = ringbuffer->buffer.length - 1U;
+  /* Map the last live index without overflowing head + index. */
+  right = right >= ringbuffer->buffer.capacity - left ? right - (ringbuffer->buffer.capacity - left) : left + right;
+  for (remaining = ringbuffer->buffer.length / 2U; remaining > 0; remaining--) {
+    n_data_elements_swap(n_data_buffer_at(&ringbuffer->buffer, left), n_data_buffer_at(&ringbuffer->buffer, right), ringbuffer->buffer.element_size);
+    left++;
+    if (left == ringbuffer->buffer.capacity) {
+      left = 0;
+    }
+    right = right == 0 ? ringbuffer->buffer.capacity - 1U : right - 1U;
+  }
 }
 
 void nexus_data_ringbuffer_clear(NexusDataRingBuffer *ringbuffer) {
@@ -1512,6 +1572,24 @@ NexusDataLinkedListNode *nexus_data_linked_list_pop_back(NexusDataLinkedList *li
   return node;
 }
 
+void nexus_data_linked_list_reverse(NexusDataLinkedList *list) {
+  NexusDataLinkedListNode *node;
+  NexusDataLinkedListNode *next;
+
+  NEXUS_PROGRAM_PRECONDITION(list != NULL, "data_linked_list_reverse: list is NULL");
+
+  node = list->first;
+  while (node != NULL) {
+    next           = node->next;
+    node->next     = node->previous;
+    node->previous = next;
+    node           = next;
+  }
+  node        = list->first;
+  list->first = list->last;
+  list->last  = node;
+}
+
 void nexus_data_linked_list_clear(NexusDataLinkedList *list) {
   NEXUS_PROGRAM_PRECONDITION(list != NULL, "data_linked_list_clear: list is NULL");
 
@@ -1774,6 +1852,11 @@ boolean nexus_data_slabbed_list_pop_pointer(NexusDataSlabbedList *list, void **o
   return nexus_data_slabbed_list_pop(list, (void *)out_pointer);
 }
 
+void nexus_data_slabbed_list_reverse(NexusDataSlabbedList *list) {
+  NEXUS_PROGRAM_PRECONDITION(list != NULL, "data_slabbed_list_reverse: list is NULL");
+  n_data_buffer_reverse_range(&list->order, 0, list->order.length);
+}
+
 void nexus_data_slabbed_list_clear(NexusDataSlabbedList *list) {
   NEXUS_PROGRAM_PRECONDITION(list != NULL, "data_slabbed_list_clear: list is NULL");
   while (list->order.length > 0) {
@@ -1886,6 +1969,11 @@ void *nexus_data_slabbed_stack_peek_pointer(NexusDataSlabbedStack *stack) {
   }
   nexus_memory_bytes_copy(slot, (void *)&pointer, NEXUS_SIZEOF(pointer));
   return pointer;
+}
+
+void nexus_data_slabbed_stack_reverse(NexusDataSlabbedStack *stack) {
+  NEXUS_PROGRAM_PRECONDITION(stack != NULL, "data_slabbed_stack_reverse: stack is NULL");
+  n_data_buffer_reverse_range(&stack->list.order, 0, stack->list.order.length);
 }
 
 void nexus_data_slabbed_stack_clear(NexusDataSlabbedStack *stack) {
@@ -2008,6 +2096,31 @@ void *nexus_data_slabbed_queue_peek_pointer(NexusDataSlabbedQueue *queue) {
   NEXUS_PROGRAM_PRECONDITION(queue->pool.element_size == NEXUS_SIZEOF(void *), "data_slabbed_queue_peek_pointer: element_size is not pointer-sized");
   slot = nexus_data_slabbed_queue_peek(queue);
   return slot == NULL ? NULL : *(void *const *)slot;
+}
+
+void nexus_data_slabbed_queue_reverse(NexusDataSlabbedQueue *queue) {
+  uint_large left;
+  uint_large right;
+  uint_large remaining;
+
+  NEXUS_PROGRAM_PRECONDITION(queue != NULL, "data_slabbed_queue_reverse: queue is NULL");
+
+  if (queue->order.length < 2U) {
+    return;
+  }
+
+  left  = queue->head;
+  right = queue->order.length - 1U;
+  /* Map the last live index without overflowing head + index. */
+  right = right >= queue->order.capacity - left ? right - (queue->order.capacity - left) : left + right;
+  for (remaining = queue->order.length / 2U; remaining > 0; remaining--) {
+    n_data_elements_swap(n_data_buffer_at(&queue->order, left), n_data_buffer_at(&queue->order, right), queue->order.element_size);
+    left++;
+    if (left == queue->order.capacity) {
+      left = 0;
+    }
+    right = right == 0 ? queue->order.capacity - 1U : right - 1U;
+  }
 }
 
 void nexus_data_slabbed_queue_clear(NexusDataSlabbedQueue *queue) {
