@@ -2549,7 +2549,7 @@ NexusError *nexus_data_hashmap_create(const NexusDataHashMapConfig *config, Nexu
   if (config->seed_is_set) {
     hashmap->seed = config->seed;
   } else {
-    error = nexus_entropy_system_fill(NULL, (byte *)&hashmap->seed, NEXUS_SIZEOF(hashmap->seed));
+    error = nexus_random_system_fill(NULL, (byte *)&hashmap->seed, NEXUS_SIZEOF(hashmap->seed));
     if (error->code != NEXUS_PROGRAM_ERROR_SUCCESS()->code) {
       nexus_memory_deallocate(hashmap);
       error = NEXUS_PROGRAM_ERRORS_FORWARD(error);
@@ -2811,7 +2811,7 @@ NexusError *nexus_data_slabbed_hashmap_create(const NexusDataHashMapConfig *conf
   if (config->seed_is_set) {
     table->seed = config->seed;
   } else {
-    error = nexus_entropy_system_fill(NULL, (byte *)&table->seed, NEXUS_SIZEOF(table->seed));
+    error = nexus_random_system_fill(NULL, (byte *)&table->seed, NEXUS_SIZEOF(table->seed));
     if (error->code != NEXUS_PROGRAM_ERROR_SUCCESS()->code) {
       nexus_memory_deallocate(hashmap);
       error = NEXUS_PROGRAM_ERRORS_FORWARD(error);

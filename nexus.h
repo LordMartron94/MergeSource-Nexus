@@ -1878,25 +1878,57 @@ extern NEXUS_NODISCARD uint_large nexus_memory_summary_report(char *buffer, uint
 /* ============================================================================ */
 
 /*
-Summary: entropy subsystem errors.
+Summary: entropy acquisition errors.
 */
 #define NEXUS_ERROR_ENTROPY_FACILITY NEXUS_PROGRAM_ERROR_FACILITY_IDENTIFIER_CREATE('E', 'N', 'T', 'R')
-
 typedef enum NexusEntropyErrorCategory {
   NEEC_SOURCE,
-  NEEC_GENERATOR,
-
   NEEC_COUNT
 } NexusEntropyErrorCategory;
-
-#define NEXUS_ENTROPY_ERROR_LIST(X, library, facility)                                                                                               \
-  X(NEXUS_ENTROPY_ERROR_SOURCE_FAILED, NEEC_SOURCE, 1, library, facility)                                                                            \
-  X(NEXUS_ENTROPY_ERROR_TAPE_EXHAUSTED, NEEC_GENERATOR, 1, library, facility)
-
+#define NEXUS_ENTROPY_ERROR_LIST(X, library, facility) X(NEXUS_ENTROPY_ERROR_SOURCE_FAILED, NEEC_SOURCE, 1, library, facility)
 NEXUS_ERROR_FACILITY_DEFINE(NexusEntropyError, NEXUS_ERROR_LIBRARY_IDENTIFIER, NEXUS_ERROR_ENTROPY_FACILITY, NEXUS_ENTROPY_ERROR_LIST)
 
 /*
-Summary: fills a caller buffer with bytes from an entropy source.
+Summary: acquires unpredictable bytes from the operating system.
+Description: uses getrandom, getentropy, or BCryptGenRandom; no deterministic
+  fallback. May wait for OS random initialization. Zero bytes succeeds.
+Params: out_bytes  out; exactly byte_count bytes written on success
+Ownership: output storage is borrowed for the duration of the call.
+Errors: NULL output with nonzero count asserts. Returns
+  NEXUS_ENTROPY_ERROR_SOURCE_FAILED on OS failure or unsupported platforms;
+  discard the entire output buffer after failure.
+Thread-safety: safe to call concurrently.
+Complexity: O(byte_count) time, O(1) space, no allocation.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_entropy_system_fill(byte *out_bytes, uint_large byte_count);
+
+/* ============================================================================ */
+/* ---------------------------------------------------------------------------- */
+/* RANDOM                                                                       */
+/* ---------------------------------------------------------------------------- */
+/* ============================================================================ */
+
+/*
+Summary: random generator errors.
+*/
+#define NEXUS_ERROR_RANDOM_FACILITY NEXUS_PROGRAM_ERROR_FACILITY_IDENTIFIER_CREATE('R', 'A', 'N', 'D')
+typedef enum NexusRandomErrorCategory {
+  NREC_GENERATOR,
+  NREC_COUNT
+} NexusRandomErrorCategory;
+#define NEXUS_RANDOM_ERROR_LIST(X, library, facility)                                                                                                \
+  X(NEXUS_RANDOM_ERROR_TAPE_EXHAUSTED, NREC_GENERATOR, 1, library, facility)                                                                         \
+  X(NEXUS_RANDOM_ERROR_STREAM_EXHAUSTED, NREC_GENERATOR, 2, library, facility)
+NEXUS_ERROR_FACILITY_DEFINE(NexusRandomError, NEXUS_ERROR_LIBRARY_IDENTIFIER, NEXUS_ERROR_RANDOM_FACILITY, NEXUS_RANDOM_ERROR_LIST)
+
+/*
+Summary: version of the stable random byte-stream and scalar-draw contract.
+See: adr/0009-separate-entropy-and-random-generation
+*/
+#define NEXUS_RANDOM_SEQUENCE_VERSION 1
+
+/*
+Summary: fills a caller buffer with bytes from a random source.
 Params:
   state      source-specific borrowed state; nullable when the source needs none
   out_bytes  out; exactly byte_count bytes are written on success
@@ -1904,80 +1936,96 @@ Errors:
   A NULL out_bytes with nonzero byte_count is a programmer error.
   Returns a source-specific NexusError when bytes cannot be produced.
 */
-typedef NexusError *NexusEntropyFillFunction(void *state, byte *out_bytes, uint_large byte_count);
+typedef NexusError *NexusRandomFillFunction(void *state, byte *out_bytes, uint_large byte_count);
 
 /*
-Summary: a borrowed entropy source consisting of state plus its fill operation.
+Summary: a borrowed random source consisting of state plus its fill operation.
 Description:
   Sources are capability objects. They do not imply cryptographic security:
-  nexus_entropy_system_source_get is cryptographically secure, while generator
+  nexus_random_system_source_get is cryptographically secure, while generator
   sources are deterministic and intended for simulation, testing, or explicit
-  pseudorandom workloads.
+  pseudorandom workloads. Sampling retains the source's quality; a counter or
+  tape is a test fixture, not a statistically uniform generator.
+  Fallible random operations return Nexus error chains; source/exhaustion
+  reasons may be nested in contained_error behind forwarding markers. Error
+  pool exhaustion can replace the original reason with a pool-capacity error.
 Ownership: state remains owned by the caller and must outlive every source use.
 */
-typedef struct NexusEntropySource {
-  void                     *state;
-  NexusEntropyFillFunction *fill;
-} NexusEntropySource;
+typedef struct NexusRandomSource {
+  void                    *state;
+  NexusRandomFillFunction *fill;
+} NexusRandomSource;
 
 /*
-Summary: deterministic algorithms supported by NexusEntropyGenerator.
+Summary: deterministic algorithms supported by NexusRandomGenerator.
 Values:
-  NEA_LCG64         small compatibility generator; not statistically strong
-  NEA_SPLITMIX64    fast seed expansion and independent lightweight streams
-  NEA_XOROSHIRO128  fast general simulation generator
-  NEA_PCG32         statistically robust 32-bit output with selectable stream
-  NEA_CHACHA20      deterministic cryptographic stream generator
-  NEA_TAPE          replay caller-provided bytes exactly once
-  NEA_COUNTER       predictable diagnostic sequence
+  NRA_LCG64         small compatibility generator; not statistically strong
+  NRA_SPLITMIX64    fast seed expansion and independent lightweight streams
+  NRA_XOROSHIRO128  fast general simulation generator
+  NRA_PCG32         PCG-XSH-RR 64/32 output with a 63-bit stream selector
+  NRA_CHACHA20      deterministic cryptographic stream generator
+  NRA_TAPE          replay caller-provided bytes exactly once
+  NRA_COUNTER       predictable diagnostic sequence
 */
-typedef enum NexusEntropyAlgorithm {
-  NEA_LCG64,
-  NEA_SPLITMIX64,
-  NEA_XOROSHIRO128,
-  NEA_PCG32,
-  NEA_CHACHA20,
-  NEA_TAPE,
-  NEA_COUNTER
-} NexusEntropyAlgorithm;
-
-#ifndef NEXUS_ENTROPY_GENERATOR_STATE_WORDS
-#  define NEXUS_ENTROPY_GENERATOR_STATE_WORDS 40
-#endif
+typedef enum NexusRandomAlgorithm {
+  NRA_LCG64,
+  NRA_SPLITMIX64,
+  NRA_XOROSHIRO128,
+  NRA_PCG32,
+  NRA_CHACHA20,
+  NRA_TAPE,
+  NRA_COUNTER
+} NexusRandomAlgorithm;
 
 /*
-Summary: caller-owned state for one deterministic entropy generator.
+Summary: fixed working-storage size; not configurable or a serialized format.
+*/
+#define NEXUS_RANDOM_GENERATOR_STATE_WORDS 40
+
+/*
+Summary: caller-owned state for one deterministic random generator.
 Description:
-  Initialize with exactly one nexus_entropy_generator_initialize_* function.
+  Initialize with exactly one nexus_random_generator_initialize_* function.
   The storage is public only so generators can live inline or on the stack;
-  clients must not interpret or modify it directly.
+  clients must not interpret or modify it directly. Initialization never
+  acquires entropy. No implicit global generator exists. The named algorithms
+  retain identical output across library versions and architectures under
+  NEXUS_RANDOM_SEQUENCE_VERSION. Integer draws decode successive little-endian
+  bytes; mixing draw widths or splitting fills consumes the same byte stream.
+  State memory is not a portable serialization format.
+  xoroshiro128+ uses the original (55, 14, 36) transition; a zero seed maps to
+  lo=0x9e3779b97f4a7c15, hi=0x6a09e667f3bcc909. PCG32 emits low word first
+  when combining two outputs. Only ChaCha20 has a cryptographic construction;
+  its key must be secret and unpredictable and its stream positions unique.
+  Do not use LCG64, SplitMix64, xoroshiro128+, or PCG32 for secrets.
 Ownership:
   The generator owns no allocation. A tape generator borrows its tape bytes.
+  Generating and sampling from built-in generators never allocates.
 Thread-safety: one generator may be used by only one thread at a time.
+See: adr/0009-separate-entropy-and-random-generation
 */
-typedef struct NexusEntropyGenerator {
-  NexusEntropyAlgorithm algorithm;
-  uint32                word_index;
-  uint32                rounds;
-  uint64                state[NEXUS_ENTROPY_GENERATOR_STATE_WORDS];
-  const byte           *tape;
-  uint_large            tape_length;
-  uint_large            tape_offset;
-} NexusEntropyGenerator;
+typedef struct NexusRandomGenerator {
+  NexusRandomAlgorithm algorithm;
+  uint32               word_index;
+  uint64               state[NEXUS_RANDOM_GENERATOR_STATE_WORDS];
+  const byte          *tape;
+  uint_large           tape_length;
+  uint_large           tape_offset;
+} NexusRandomGenerator;
 
 /*
-Summary: returns the operating system's cryptographically secure entropy source.
+Summary: returns the operating system's cryptographically secure random source.
 Description:
   Use for secrets, unpredictable HashMap seeds, UUIDv4, and UUIDv7 random
   fields. The source has no caller-owned state and may be copied freely.
-Returns: a stateless source backed by nexus_entropy_system_fill; it is safe to copy.
+Returns: a stateless source backed by nexus_random_system_fill; it is safe to copy.
 */
-extern NexusEntropySource nexus_entropy_system_source_get(void);
+extern NexusRandomSource nexus_random_system_source_get(void);
 
 /*
 Summary: fills out_bytes from the operating system cryptographic random source.
 Params:
-  state      ignored; present for NexusEntropyFillFunction compatibility
+  state      ignored; present for NexusRandomFillFunction compatibility
   out_bytes  out; exactly byte_count bytes are written on success
 Errors:
   A NULL out_bytes with nonzero byte_count is a programmer error.
@@ -1985,7 +2033,58 @@ Errors:
   fails; no partially filled buffer should be consumed after failure.
 Thread-safety: safe to call concurrently.
 */
-extern NEXUS_NODISCARD NexusError *nexus_entropy_system_fill(void *state, byte *out_bytes, uint_large byte_count);
+extern NEXUS_NODISCARD NexusError *nexus_random_system_fill(void *state, byte *out_bytes, uint_large byte_count);
+
+/*
+Summary: draws seed_size bytes of seed material from the secure OS source.
+Description: supports arbitrary seed widths, including 32-byte ChaCha20 keys.
+  Does not initialize or mutate a generator. Zero bytes succeeds. All byte
+  patterns are permitted; this does not enforce algorithm-specific seed rules.
+Params: out_seed  out; exactly seed_size bytes written on success
+Ownership: caller owns the borrowed output storage; it is never retained.
+Errors: NULL output with nonzero seed_size asserts. Returns an OS entropy
+  error on failure; discard the entire seed buffer after failure.
+Thread-safety: safe to call concurrently for distinct output storage.
+Complexity: O(seed_size) time, O(1) space, no allocation.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_seed_fill(byte *out_seed, uint_large seed_size);
+
+/*
+Summary: draws a 32-bit seed from the secure OS source.
+Description: accepts every bit pattern, including zero. Does not seed a
+  generator automatically; record the returned value for later replay.
+Params: out_seed  out; assigned only on success
+Ownership: caller owns the borrowed output storage; it is never retained.
+Errors: NULL output asserts. Returns an OS entropy error chain on failure.
+Thread-safety: safe to call concurrently for distinct output storage.
+Complexity: O(1) time and space, no allocation.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_seed_uint32_get(uint32 *out_seed);
+
+/*
+Summary: draws a 64-bit seed from the secure OS source.
+Description: accepts every bit pattern, including zero. Does not seed a
+  generator automatically; record the returned value for later replay.
+Params: out_seed  out; assigned only on success
+Ownership: caller owns the borrowed output storage; it is never retained.
+Errors: NULL output asserts. Returns an OS entropy error chain on failure.
+Thread-safety: safe to call concurrently for distinct output storage.
+Complexity: O(1) time and space, no allocation.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_seed_uint64_get(uint64 *out_seed);
+
+/*
+Summary: draws a 128-bit seed from the secure OS source.
+Description: decodes 16 random bytes little-endian, low limb first. Accepts
+  every bit pattern, including zero. Does not initialize a generator; record
+  both limbs for later replay rather than serializing native object memory.
+Params: out_seed  out; both limbs assigned only on success
+Ownership: caller owns the borrowed output storage; it is never retained.
+Errors: NULL output asserts. Returns an OS entropy error chain on failure.
+Thread-safety: safe to call concurrently for distinct output storage.
+Complexity: O(1) time and space, no allocation.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_seed_uint128_get(uint128 *out_seed);
 
 /*
 Summary: fills out_bytes through source.
@@ -1993,11 +2092,11 @@ Params:
   source     borrowed and not retained
   out_bytes  out; exactly byte_count bytes are written on success
 Errors:
-  NULL source/fill or NULL out_bytes with nonzero byte_count is a programmer
-  error. Returns the source's error unchanged, wrapped with this call site.
+  NULL source.fill or NULL out_bytes with nonzero byte_count is a programmer
+  error. Returns the source's error chain, wrapped with this call site. Discard output after failure.
 Thread-safety: inherits the selected source's contract.
 */
-extern NEXUS_NODISCARD NexusError *nexus_entropy_source_fill(NexusEntropySource source, byte *out_bytes, uint_large byte_count);
+extern NEXUS_NODISCARD NexusError *nexus_random_source_fill(NexusRandomSource source, byte *out_bytes, uint_large byte_count);
 
 /*
 Summary: initializes generator as a 64-bit linear congruential generator.
@@ -2006,7 +2105,7 @@ Description: retained for compatibility and simple diagnostics; do not use for
 Params: generator  caller-owned state; overwritten completely
 Errors: a NULL generator is a programmer error (asserts).
 */
-extern void nexus_entropy_generator_initialize_lcg64(NexusEntropyGenerator *generator, uint64 seed);
+extern void nexus_random_generator_initialize_lcg64(NexusRandomGenerator *generator, uint64 seed);
 
 /*
 Summary: initializes generator as SplitMix64.
@@ -2015,7 +2114,7 @@ Description: best used to expand a compact seed into other generator state or
 Params: generator  caller-owned state; overwritten completely
 Errors: a NULL generator is a programmer error (asserts).
 */
-extern void nexus_entropy_generator_initialize_splitmix64(NexusEntropyGenerator *generator, uint64 seed);
+extern void nexus_random_generator_initialize_splitmix64(NexusRandomGenerator *generator, uint64 seed);
 
 /*
 Summary: initializes generator as xoroshiro128+ from a 128-bit seed.
@@ -2024,27 +2123,31 @@ Description: use for fast simulations that do not require cryptographic output.
 Params: generator  caller-owned state; overwritten completely
 Errors: a NULL generator is a programmer error (asserts).
 */
-extern void nexus_entropy_generator_initialize_xoroshiro128(NexusEntropyGenerator *generator, uint128 seed);
+extern void nexus_random_generator_initialize_xoroshiro128(NexusRandomGenerator *generator, uint128 seed);
 
 /*
 Summary: initializes generator as PCG-XSH-RR with a selectable stream.
-Description: use for reproducible simulation streams where distinct sequence
-  values must produce distinct streams.
+Description: PCG-XSH-RR 64/32 with reference two-step seeding. Only the low
+  63 bits of sequence select the stream; selectors differing only in bit 63
+  select the same stream. Never uses operating-system entropy.
 Params: generator  caller-owned state; overwritten completely
 Errors: a NULL generator is a programmer error (asserts).
 */
-extern void nexus_entropy_generator_initialize_pcg32(NexusEntropyGenerator *generator, uint64 seed, uint64 sequence);
+extern void nexus_random_generator_initialize_pcg32(NexusRandomGenerator *generator, uint64 seed, uint64 sequence);
 
 /*
 Summary: initializes generator as a ChaCha stream with a 256-bit key.
 Description: use when deterministic output must remain unpredictable without
-  the key. The implementation uses the standard 20-round construction.
+  the key. Uses RFC 8439's 20 rounds, 96-bit nonce, and 32-bit block counter.
+  Never reuse a key/nonce/counter position. No automatic seeding, reseeding,
+  or forward-secrecy guarantee. Fills beyond the remaining counter space fail
+  without modifying output or generator state.
 Params:
   key    borrowed 32-byte key, copied during initialization
   nonce  borrowed 12-byte nonce, copied during initialization
 Errors: a NULL generator, key, or nonce is a programmer error (asserts).
 */
-extern void nexus_entropy_generator_initialize_chacha20(NexusEntropyGenerator *generator, const byte key[32], const byte nonce[12], uint32 counter);
+extern void nexus_random_generator_initialize_chacha20(NexusRandomGenerator *generator, const byte key[32], const byte nonce[12], uint32 counter);
 
 /*
 Summary: initializes generator to replay a caller-provided byte tape.
@@ -2052,7 +2155,7 @@ Description: use for exact regression reproduction. Reads never wrap.
 Ownership: tape is borrowed and must outlive generator use.
 Errors: a NULL generator, or NULL tape with nonzero tape_length, is a programmer error (asserts).
 */
-extern void nexus_entropy_generator_initialize_tape(NexusEntropyGenerator *generator, const void *tape, uint_large tape_length);
+extern void nexus_random_generator_initialize_tape(NexusRandomGenerator *generator, const void *tape, uint_large tape_length);
 
 /*
 Summary: initializes generator as a predictable counter sequence.
@@ -2061,7 +2164,7 @@ Description: each 64-bit draw yields the current value, then advances by step.
 Params: generator  caller-owned state; overwritten completely
 Errors: a NULL generator is a programmer error (asserts).
 */
-extern void nexus_entropy_generator_initialize_counter(NexusEntropyGenerator *generator, uint64 start, uint64 step);
+extern void nexus_random_generator_initialize_counter(NexusRandomGenerator *generator, uint64 start, uint64 step);
 
 /*
 Summary: returns a source borrowing generator.
@@ -2070,31 +2173,165 @@ Ownership: generator must outlive use of the returned source.
 Thread-safety: one generator may be advanced by only one thread at a time.
 Errors: a NULL generator is a programmer error (asserts).
 */
-extern NexusEntropySource nexus_entropy_generator_source_get(NexusEntropyGenerator *generator);
+extern NexusRandomSource nexus_random_generator_source_get(NexusRandomGenerator *generator);
 
 /*
 Summary: fills out_bytes from generator and advances its state.
 Errors:
   NULL generator or NULL out_bytes with nonzero byte_count is a programmer
-  error. Returns NEXUS_ENTROPY_ERROR_TAPE_EXHAUSTED if a tape has too few
-  bytes; the tape position is unchanged in that case.
+  error. Returns NEXUS_RANDOM_ERROR_TAPE_EXHAUSTED if a tape has too few
+  bytes, or NEXUS_RANDOM_ERROR_STREAM_EXHAUSTED before ChaCha20's counter
+  would wrap. Both leave state and output unchanged for that fill request.
+  An invalid algorithm asserts. A zero-byte fill succeeds for initialized state.
 Thread-safety: one generator may be advanced by only one thread at a time.
 */
-extern NEXUS_NODISCARD NexusError *nexus_entropy_generator_fill(void *generator, byte *out_bytes, uint_large byte_count);
+extern NEXUS_NODISCARD NexusError *nexus_random_generator_fill(void *generator, byte *out_bytes, uint_large byte_count);
 
 /*
 Summary: draws one 32-bit value from generator.
 Errors: NULL generator or out_value is a programmer error. Tape exhaustion is
-  returned as NEXUS_ENTROPY_ERROR_TAPE_EXHAUSTED.
+  returned as NEXUS_RANDOM_ERROR_TAPE_EXHAUSTED; ChaCha20 exhaustion returns
+  NEXUS_RANDOM_ERROR_STREAM_EXHAUSTED. Invalid algorithms assert.
 */
-extern NEXUS_NODISCARD NexusError *nexus_entropy_generator_uint32_get(NexusEntropyGenerator *generator, uint32 *out_value);
+extern NEXUS_NODISCARD NexusError *nexus_random_generator_uint32_get(NexusRandomGenerator *generator, uint32 *out_value);
 
 /*
 Summary: draws one 64-bit value from generator.
 Errors: NULL generator or out_value is a programmer error. Tape exhaustion is
-  returned as NEXUS_ENTROPY_ERROR_TAPE_EXHAUSTED.
+  returned as NEXUS_RANDOM_ERROR_TAPE_EXHAUSTED; ChaCha20 exhaustion returns
+  NEXUS_RANDOM_ERROR_STREAM_EXHAUSTED. Invalid algorithms assert.
 */
-extern NEXUS_NODISCARD NexusError *nexus_entropy_generator_uint64_get(NexusEntropyGenerator *generator, uint64 *out_value);
+extern NEXUS_NODISCARD NexusError *nexus_random_generator_uint64_get(NexusRandomGenerator *generator, uint64 *out_value);
+
+/*
+Summary: draws one little-endian integer from source.
+Params: out_value  out; assigned only on success
+Ownership: source and output storage are borrowed, never retained.
+Errors: NULL source.fill, NULL output asserts.
+  Returns the selected source error chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: O(1) for built-in generators; inherits source costs otherwise.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_source_uint32_get(NexusRandomSource source, uint32 *out_value);
+
+/*
+Summary: draws one little-endian integer from source.
+Params: out_value  out; assigned only on success
+Ownership: source and output storage are borrowed, never retained.
+Errors: NULL source.fill, NULL output asserts.
+  Returns the selected source error chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: O(1) for built-in generators; inherits source costs otherwise.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_source_uint64_get(NexusRandomSource source, uint64 *out_value);
+
+/*
+Summary: draws one unbiased integer in [0, upper_bound) from source.
+Description: rejects draws below 2^width modulo upper_bound, then reduces
+  modulo upper_bound. Requires uniform input draws; may consume many draws.
+  A finite source may exhaust after consuming rejected draws.
+Params: out_value  out; assigned only on success
+Ownership: source and output storage are borrowed, never retained.
+Errors: NULL source.fill, NULL output, or zero upper_bound asserts.
+  Returns the selected source error chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: expected O(1) draws, unbounded worst case; inherits source costs.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_source_uint32_bounded_get(NexusRandomSource source, uint32 upper_bound, uint32 *out_value);
+
+/*
+Summary: draws one unbiased integer in [0, upper_bound) from source.
+Description: rejects draws below 2^width modulo upper_bound, then reduces
+  modulo upper_bound. Requires uniform input draws; may consume many draws.
+  A finite source may exhaust after consuming rejected draws.
+Params: out_value  out; assigned only on success
+Ownership: source and output storage are borrowed, never retained.
+Errors: NULL source.fill, NULL output, or zero upper_bound asserts.
+  Returns the selected source error chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: expected O(1) draws, unbounded worst case; inherits source costs.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_source_uint64_bounded_get(NexusRandomSource source, uint64 upper_bound, uint64 *out_value);
+
+/*
+Summary: draws one uniform value in [0, 1) from source.
+Description: uses the upper 24 bits of a uint32 draw, scaled by 2^-24.
+  The fixed grid includes zero and excludes one; requires uniform input.
+Params: out_value  out; assigned only on success
+Ownership: source and output storage are borrowed, never retained.
+Errors: NULL source.fill, NULL output asserts.
+  Returns the selected source error chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: O(1) for built-in generators; inherits source costs otherwise.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_source_real32_get(NexusRandomSource source, real32 *out_value);
+
+/*
+Summary: draws one uniform value in [0, 1) from source.
+Description: uses the upper 53 bits of a uint64 draw, scaled by 2^-53.
+  The fixed grid includes zero and excludes one; requires uniform input.
+Params: out_value  out; assigned only on success
+Ownership: source and output storage are borrowed, never retained.
+Errors: NULL source.fill, NULL output asserts.
+  Returns the selected source error chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: O(1) for built-in generators; inherits source costs otherwise.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_source_real64_get(NexusRandomSource source, real64 *out_value);
+
+/*
+Summary: draws one unbiased integer in [0, upper_bound) from generator.
+Description: rejects draws below 2^width modulo upper_bound, then reduces
+  modulo upper_bound. Requires uniform input draws; may consume many draws.
+  A finite source may exhaust after consuming rejected draws.
+Params: out_value  out; assigned only on success
+Ownership: generator and output storage are borrowed, never retained.
+Errors: NULL generator, NULL output, or zero upper_bound asserts.
+  Invalid algorithms assert; returns a random tape/stream exhaustion chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: expected O(1) draws, unbounded worst case; inherits source costs.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_generator_uint32_bounded_get(NexusRandomGenerator *generator, uint32 upper_bound, uint32 *out_value);
+
+/*
+Summary: draws one unbiased integer in [0, upper_bound) from generator.
+Description: rejects draws below 2^width modulo upper_bound, then reduces
+  modulo upper_bound. Requires uniform input draws; may consume many draws.
+  A finite source may exhaust after consuming rejected draws.
+Params: out_value  out; assigned only on success
+Ownership: generator and output storage are borrowed, never retained.
+Errors: NULL generator, NULL output, or zero upper_bound asserts.
+  Invalid algorithms assert; returns a random tape/stream exhaustion chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: expected O(1) draws, unbounded worst case; inherits source costs.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_generator_uint64_bounded_get(NexusRandomGenerator *generator, uint64 upper_bound, uint64 *out_value);
+
+/*
+Summary: draws one uniform value in [0, 1) from generator.
+Description: uses the upper 24 bits of a uint32 draw, scaled by 2^-24.
+  The fixed grid includes zero and excludes one; requires uniform input.
+Params: out_value  out; assigned only on success
+Ownership: generator and output storage are borrowed, never retained.
+Errors: NULL generator, NULL output asserts.
+  Invalid algorithms assert; returns a random tape/stream exhaustion chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: O(1) for built-in generators; inherits source costs otherwise.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_generator_real32_get(NexusRandomGenerator *generator, real32 *out_value);
+
+/*
+Summary: draws one uniform value in [0, 1) from generator.
+Description: uses the upper 53 bits of a uint64 draw, scaled by 2^-53.
+  The fixed grid includes zero and excludes one; requires uniform input.
+Params: out_value  out; assigned only on success
+Ownership: generator and output storage are borrowed, never retained.
+Errors: NULL generator, NULL output asserts.
+  Invalid algorithms assert; returns a random tape/stream exhaustion chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: O(1) for built-in generators; inherits source costs otherwise.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_generator_real64_get(NexusRandomGenerator *generator, real64 *out_value);
 
 /* ============================================================================ */
 /* ---------------------------------------------------------------------------- */
@@ -2333,7 +2570,7 @@ Errors: NULL name with nonzero name_size or NULL out_uuid is a programmer error 
 extern void nexus_identity_uuid_v3_generate(NexusUUID namespace_uuid, const void *name, uint_large name_size, NexusUUID *out_uuid);
 
 /*
-Summary: generates random RFC 9562 UUIDv4 from the system entropy source.
+Summary: generates random RFC 9562 UUIDv4 from the secure system random source.
 Description: use for general opaque identifiers and security-sensitive contexts
   where embedded time/order is undesirable.
 Errors: NULL out_uuid is a programmer error. Returns an operating-system entropy error.
@@ -2342,11 +2579,11 @@ Thread-safety: safe to call concurrently.
 extern NEXUS_NODISCARD NexusError *nexus_identity_uuid_v4_generate(NexusUUID *out_uuid);
 
 /*
-Summary: generates UUIDv4 from an injected entropy source.
-Description: chiefly for deterministic tests and controlled entropy ownership.
+Summary: generates UUIDv4 from an injected random source.
+Description: chiefly for deterministic tests and controlled random-source ownership.
 Errors: NULL out_uuid or source.fill is a programmer error. Returns the source error.
 */
-extern NEXUS_NODISCARD NexusError *nexus_identity_uuid_v4_generate_with_entropy(NexusEntropySource source, NexusUUID *out_uuid);
+extern NEXUS_NODISCARD NexusError *nexus_identity_uuid_v4_generate_with_random(NexusRandomSource source, NexusUUID *out_uuid);
 
 /*
 Summary: generates name-based RFC 9562 UUIDv5 using SHA-1.
@@ -2397,11 +2634,11 @@ Thread-safety: safe to call concurrently.
 extern NEXUS_NODISCARD NexusError *nexus_identity_uuid_v7_generate_random(NexusUUID *out_uuid);
 
 /*
-Summary: generates stateless UUIDv7 with an injected entropy source.
+Summary: generates stateless UUIDv7 with an injected random source.
 Errors: NULL out_uuid or source.fill is a programmer error. Returns the source
   error or NEXUS_IDENTITY_ERROR_TIMESTAMP_RANGE.
 */
-extern NEXUS_NODISCARD NexusError *nexus_identity_uuid_v7_generate_random_with_entropy(NexusEntropySource source, NexusUUID *out_uuid);
+extern NEXUS_NODISCARD NexusError *nexus_identity_uuid_v7_generate_with_random(NexusRandomSource source, NexusUUID *out_uuid);
 
 /*
 Summary: builds UUIDv8 from 16 application-defined bytes and fixes version/variant bits.
@@ -3279,8 +3516,7 @@ static NEXUS_MAYBE_UNUSED uint8 nexus_bits_uint8_reverse(uint8 value) /* NOLINT 
 }
 
 static NEXUS_MAYBE_UNUSED uint_large nexus_bits_uint_large_reverse(uint_large value) /* NOLINT */ {
-  NEXUS_PROGRAM_PRECONDITION(NEXUS_SIZEOF(uint_large) == 4 || NEXUS_SIZEOF(uint_large) == 8,
-                             "uint_large must be 32 or 64 bits");
+  NEXUS_PROGRAM_PRECONDITION(NEXUS_SIZEOF(uint_large) == 4 || NEXUS_SIZEOF(uint_large) == 8, "uint_large must be 32 or 64 bits");
 
   return (uint_large)(nexus_bits_uint64_reverse((uint64)value) >> (64u - (NEXUS_SIZEOF(uint_large) * 8u)));
 }
@@ -3309,7 +3545,7 @@ static NEXUS_MAYBE_UNUSED uint64 nexus_bits_uint64_reverse_low(uint64 value, uin
 
 static NEXUS_MAYBE_UNUSED uint_large nexus_bits_uint_large_reverse_low(uint_large value, uint32 bit_count) /* NOLINT */ {
   NEXUS_PROGRAM_PRECONDITION(bit_count <= NEXUS_SIZEOF(uint_large) * 8u, "bit_count out of range for uint_large");
-  return bit_count == 0 ? 0 : nexus_bits_uint_large_reverse(value) >> ((NEXUS_SIZEOF(uint_large) * 8u )- bit_count);
+  return bit_count == 0 ? 0 : nexus_bits_uint_large_reverse(value) >> ((NEXUS_SIZEOF(uint_large) * 8u) - bit_count);
 }
 
 /* ============================================================================ */

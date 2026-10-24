@@ -1,3 +1,4 @@
+#include <string.h>
 #include <nexus.h>
 
 #include <setjmp.h>
@@ -38,40 +39,499 @@ static int nexus_test_hashes(void) {
   return 0;
 }
 
-static int nexus_test_entropy(void) {
-  NexusEntropyGenerator generator;
-  byte                  tape[4] = {1U, 2U, 3U, 4U};
-  byte                  output[4];
-  NexusError           *error;
-  uint64                counter_value;
+static boolean nexus_test_random_error_has_code(const NexusError *error, NexusErrorCode code) {
+  while (error != NULL) {
+    if (error->code == code)
+      return TRUE;
+    error = error->contained_error;
+  }
+  return FALSE;
+}
 
-  nexus_entropy_generator_initialize_tape(&generator, tape, 4U);
-  error = nexus_entropy_generator_fill(&generator, output, 4U);
-  if (error->code != NEXUS_PROGRAM_ERROR_SUCCESS()->code || output[0] != 1U || output[3] != 4U) {
-    return nexus_test_fail(20);
+static void nexus_test_random_initialize(NexusRandomGenerator *generator, NexusRandomAlgorithm algorithm, const byte *tape, uint_large length) {
+  byte    key[32];
+  byte    nonce[12];
+  uint32  index;
+  uint128 seed;
+
+  for (index = 0; index < 32U; index++) {
+    key[index] = (byte)index;
   }
-  error = nexus_entropy_generator_fill(&generator, output, 1U);
-  if (error->code != GLOBAL_NEXUS_ENTROPY_ERROR_TAPE_EXHAUSTED) {
-    return nexus_test_fail(21);
+  nexus_memory_bytes_clear(nonce, NEXUS_SIZEOF(nonce));
+  seed.lo = 1U;
+  seed.hi = 2U;
+  switch (algorithm) {
+  case NRA_LCG64:
+    nexus_random_generator_initialize_lcg64(generator, 0U);
+    break;
+  case NRA_SPLITMIX64:
+    nexus_random_generator_initialize_splitmix64(generator, 0U);
+    break;
+  case NRA_XOROSHIRO128:
+    nexus_random_generator_initialize_xoroshiro128(generator, seed);
+    break;
+  case NRA_PCG32:
+    nexus_random_generator_initialize_pcg32(generator, 42U, 54U);
+    break;
+  case NRA_CHACHA20:
+    nexus_random_generator_initialize_chacha20(generator, key, nonce, 0U);
+    break;
+  case NRA_TAPE:
+    nexus_random_generator_initialize_tape(generator, tape, length);
+    break;
+  case NRA_COUNTER:
+    nexus_random_generator_initialize_counter(generator, 9U, 3U);
+    break;
   }
-  nexus_entropy_generator_initialize_counter(&generator, 9U, 3U);
-  error = nexus_entropy_generator_uint64_get(&generator, &counter_value);
-  if (error->code != NEXUS_PROGRAM_ERROR_SUCCESS()->code || counter_value != 9U) {
-    return nexus_test_fail(22);
+}
+
+static int nexus_test_random_vectors(void) {
+  static const uint32 pcg[]      = {0xa15c02b7U, 0x7b47f409U, 0xba1d3330U, 0x83d2f293U, 0xbfa4784bU, 0xcbed606eU};
+  static const uint64 splitmix[] = {0xe220a8397b1dcdafULL, 0x6e789e6aa1b965f4ULL, 0x06c45d188009454fULL};
+  /* RFC 8439 section 2.3.2; key 00..1f, nonce 000000090000004a00000000, counter 1. */
+  static const byte    chacha[64] = {0x10, 0xf1, 0xe7, 0xe4, 0xd1, 0x3b, 0x59, 0x15, 0x50, 0x0f, 0xdd, 0x1f, 0xa3, 0x20, 0x71, 0xc4,
+                                     0xc7, 0xd1, 0xf4, 0xc7, 0x33, 0xc0, 0x68, 0x03, 0x04, 0x22, 0xaa, 0x9a, 0xc3, 0xd4, 0x6c, 0x4e,
+                                     0xd2, 0x82, 0x64, 0x46, 0x07, 0x9f, 0xaa, 0x09, 0x14, 0xc2, 0xd7, 0x05, 0xd9, 0x8b, 0x02, 0xa2,
+                                     0xb5, 0x12, 0x9c, 0xd1, 0xde, 0x16, 0x4e, 0xb9, 0xcb, 0xd0, 0x83, 0xe8, 0xa2, 0x50, 0x3c, 0x4e};
+  NexusRandomGenerator generator;
+  NexusRandomGenerator other;
+  NexusError          *error;
+  byte                 key[32];
+  byte                 nonce[12];
+  byte                 output[65];
+  byte                 reference[64];
+  uint32               index;
+  uint32               value32;
+  uint64               value64;
+  uint128              seed;
+
+  nexus_random_generator_initialize_pcg32(&generator, 42U, 54U);
+  for (index = 0; index < 6U; index++) {
+    error = nexus_random_generator_uint32_get(&generator, &value32);
+    if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || value32 != pcg[index])
+      return nexus_test_fail(1100);
+  }
+  nexus_random_generator_initialize_pcg32(&generator, 42U, 54U);
+  nexus_random_generator_initialize_pcg32(&other, 42U, 54U | 0x8000000000000000ULL);
+  error = nexus_random_generator_uint64_get(&generator, &value64);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || value64 != 0x7b47f409a15c02b7ULL)
+    return nexus_test_fail(1101);
+  {
+    uint64 other_value;
+    error = nexus_random_generator_uint64_get(&other, &other_value);
+    if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || other_value != value64)
+      return nexus_test_fail(1102);
+  }
+  nexus_random_generator_initialize_splitmix64(&generator, 0U);
+  for (index = 0; index < 3U; index++) {
+    error = nexus_random_generator_uint64_get(&generator, &value64);
+    if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || value64 != splitmix[index])
+      return nexus_test_fail(1103);
+  }
+  nexus_random_generator_initialize_lcg64(&generator, 0U);
+  error = nexus_random_generator_uint64_get(&generator, &value64);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || value64 != 1442695040888963407ULL)
+    return nexus_test_fail(1104);
+  error = nexus_random_generator_uint64_get(&generator, &value64);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || value64 != 1876011003808476466ULL)
+    return nexus_test_fail(1105);
+  seed.lo = 1U;
+  seed.hi = 2U;
+  nexus_random_generator_initialize_xoroshiro128(&generator, seed);
+  error = nexus_random_generator_uint64_get(&generator, &value64);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || value64 != 3U)
+    return nexus_test_fail(1106);
+  error = nexus_random_generator_uint64_get(&generator, &value64);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || value64 != 0x008000300000c003ULL)
+    return nexus_test_fail(1107);
+  seed.lo = 0U;
+  seed.hi = 0U;
+  nexus_random_generator_initialize_xoroshiro128(&generator, seed);
+  seed.lo = 0x9e3779b97f4a7c15ULL;
+  seed.hi = 0x6a09e667f3bcc909ULL;
+  nexus_random_generator_initialize_xoroshiro128(&other, seed);
+  error = nexus_random_generator_fill(&generator, output, 64U);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+    return nexus_test_fail(1108);
+  error = nexus_random_generator_fill(&other, reference, 64U);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || memcmp(output, reference, 64U) != 0)
+    return nexus_test_fail(1109);
+  for (index = 0; index < 32U; index++)
+    key[index] = (byte)index;
+  nexus_memory_bytes_clear(nonce, NEXUS_SIZEOF(nonce));
+  nonce[3] = 9U;
+  nonce[7] = 0x4aU;
+  nexus_random_generator_initialize_chacha20(&generator, key, nonce, 1U);
+  error = nexus_random_generator_fill(&generator, output, 64U);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || memcmp(output, chacha, 64U) != 0)
+    return nexus_test_fail(1110);
+
+  /* Exhaustion must preserve both the buffered final block and caller output. */
+  nexus_random_generator_initialize_chacha20(&generator, key, nonce, 0xffffffffU);
+  nexus_random_generator_initialize_chacha20(&other, key, nonce, 0xffffffffU);
+  nexus_memory_bytes_set(output, 65U, 0xa5U);
+  error = nexus_random_generator_fill(&generator, output, 65U);
+  if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_RANDOM_ERROR_STREAM_EXHAUSTED))
+    return nexus_test_fail(1111);
+  for (index = 0; index < 65U; index++)
+    if (output[index] != 0xa5U)
+      return nexus_test_fail(1112);
+  error = nexus_random_generator_fill(&generator, output, 1U);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+    return nexus_test_fail(1113);
+  error = nexus_random_generator_fill(&generator, reference, 64U);
+  if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_RANDOM_ERROR_STREAM_EXHAUSTED))
+    return nexus_test_fail(1114);
+  error = nexus_random_generator_fill(&generator, output + 1, 63U);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+    return nexus_test_fail(1115);
+  error = nexus_random_generator_fill(&other, reference, 64U);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || memcmp(output, reference, 64U) != 0)
+    return nexus_test_fail(1116);
+  value64 = 123U;
+  error   = nexus_random_generator_uint64_get(&generator, &value64);
+  if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_RANDOM_ERROR_STREAM_EXHAUSTED) || value64 != 123U)
+    return nexus_test_fail(1117);
+  error = nexus_random_generator_fill(&generator, NULL, 0U);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+    return nexus_test_fail(1118);
+  return 0;
+}
+
+static int nexus_test_random_chunking(void) {
+  NexusRandomGenerator whole;
+  NexusRandomGenerator chunked;
+  NexusError          *error;
+  byte                 tape[257];
+  byte                 expected[257];
+  byte                 actual[257];
+  uint32               algorithm;
+  uint32               index;
+  uint32               value32;
+  uint64               value64;
+
+  for (index = 0; index < 257U; index++)
+    tape[index] = (byte)index;
+  for (algorithm = NRA_LCG64; algorithm <= NRA_COUNTER; algorithm++) {
+    nexus_test_random_initialize(&whole, (NexusRandomAlgorithm)algorithm, tape, 257U);
+    nexus_test_random_initialize(&chunked, (NexusRandomAlgorithm)algorithm, tape, 257U);
+    error = nexus_random_generator_fill(&whole, expected, 257U);
+    if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+      return nexus_test_fail(1120);
+    for (index = 0; index < 257U; index++) {
+      error = nexus_random_source_fill(nexus_random_generator_source_get(&chunked), actual + index, 1U);
+      if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+        return nexus_test_fail(1121);
+    }
+    if (memcmp(expected, actual, 257U) != 0)
+      return nexus_test_fail(1122);
+    nexus_test_random_initialize(&chunked, (NexusRandomAlgorithm)algorithm, tape, 257U);
+    error = nexus_random_generator_fill(&chunked, actual, 1U);
+    if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || actual[0] != expected[0])
+      return nexus_test_fail(1123);
+    error = nexus_random_generator_uint32_get(&chunked, &value32);
+    if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || value32 != nexus_bits_uint32_from_bytes_lsb(expected + 1))
+      return nexus_test_fail(1124);
+    error = nexus_random_generator_uint64_get(&chunked, &value64);
+    if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || value64 != nexus_bits_uint64_from_bytes_lsb(expected + 5))
+      return nexus_test_fail(1125);
+    error = nexus_random_generator_fill(&chunked, actual + 13, 244U);
+    if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || memcmp(expected + 13, actual + 13, 244U) != 0)
+      return nexus_test_fail(1126);
   }
   return 0;
 }
 
+static int nexus_test_random_sampling(void) {
+  static const uint32  bounds32[] = {1U, 16U, 10U, 0x80000001U, 0xffffffffU};
+  static const uint64  bounds64[] = {1U, 16U, 10U, 0x8000000000000001ULL, 0xffffffffffffffffULL};
+  NexusRandomGenerator generator;
+  NexusRandomSource    source;
+  NexusError          *error;
+  byte                 tape[32];
+  uint32               index;
+  uint32               value32;
+  uint32               threshold32;
+  uint64               value64;
+  uint64               threshold64;
+  real32               float_value;
+  real64               double_value;
+
+  /* Each finite tape forces rejection below the threshold and acceptance at it. */
+  for (index = 0; index < 5U; index++) {
+    threshold32 = (uint32)(0U - bounds32[index]) % bounds32[index];
+    nexus_bits_uint32_to_bytes_lsb(tape, threshold32 == 0U ? 0U : threshold32 - 1U);
+    nexus_bits_uint32_to_bytes_lsb(tape + 4, threshold32);
+    nexus_random_generator_initialize_tape(&generator, tape, threshold32 == 0U ? 4U : 8U);
+    source = nexus_random_generator_source_get(&generator);
+    error  = nexus_random_source_uint32_bounded_get(source, bounds32[index], &value32);
+    if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || value32 != threshold32 % bounds32[index])
+      return nexus_test_fail(1130);
+    value32 = 123U;
+    error   = nexus_random_generator_uint32_get(&generator, &value32);
+    if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_RANDOM_ERROR_TAPE_EXHAUSTED) || value32 != 123U)
+      return nexus_test_fail(1131);
+
+    threshold64 = (uint64)(0U - bounds64[index]) % bounds64[index];
+    nexus_bits_uint64_to_bytes_lsb(tape, threshold64 == 0U ? 0U : threshold64 - 1U);
+    nexus_bits_uint64_to_bytes_lsb(tape + 8, threshold64);
+    nexus_random_generator_initialize_tape(&generator, tape, threshold64 == 0U ? 8U : 16U);
+    error = nexus_random_generator_uint64_bounded_get(&generator, bounds64[index], &value64);
+    if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || value64 != threshold64 % bounds64[index])
+      return nexus_test_fail(1132);
+    value64 = 123U;
+    error   = nexus_random_source_uint64_get(nexus_random_generator_source_get(&generator), &value64);
+    if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_RANDOM_ERROR_TAPE_EXHAUSTED) || value64 != 123U)
+      return nexus_test_fail(1133);
+  }
+  nexus_memory_bytes_clear(tape, NEXUS_SIZEOF(tape));
+  nexus_random_generator_initialize_tape(&generator, tape, 4U);
+  value32 = 123U;
+  error   = nexus_random_generator_uint32_bounded_get(&generator, 10U, &value32);
+  if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_RANDOM_ERROR_TAPE_EXHAUSTED) || value32 != 123U)
+    return nexus_test_fail(1134);
+  nexus_random_generator_initialize_tape(&generator, tape, 8U);
+  value64 = 123U;
+  error   = nexus_random_source_uint64_bounded_get(nexus_random_generator_source_get(&generator), 10U, &value64);
+  if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_RANDOM_ERROR_TAPE_EXHAUSTED) || value64 != 123U)
+    return nexus_test_fail(1135);
+
+  /* Zero, greatest value below one, and exactly one half, at each precision. */
+  nexus_bits_uint32_to_bytes_lsb(tape, 0U);
+  nexus_bits_uint32_to_bytes_lsb(tape + 4, 0xffffffffU);
+  nexus_bits_uint32_to_bytes_lsb(tape + 8, 0x80000000U);
+  nexus_random_generator_initialize_tape(&generator, tape, 12U);
+  error = nexus_random_generator_real32_get(&generator, &float_value);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || float_value != 0.0F)
+    return nexus_test_fail(1136);
+  error = nexus_random_source_real32_get(nexus_random_generator_source_get(&generator), &float_value);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || float_value != 1.0F - (1.0F / 16777216.0F))
+    return nexus_test_fail(1137);
+  error = nexus_random_generator_real32_get(&generator, &float_value);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || float_value != 0.5F)
+    return nexus_test_fail(1138);
+  error = nexus_random_generator_real32_get(&generator, &float_value);
+  if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_RANDOM_ERROR_TAPE_EXHAUSTED) || float_value != 0.5F)
+    return nexus_test_fail(1139);
+  nexus_bits_uint64_to_bytes_lsb(tape, 0U);
+  nexus_bits_uint64_to_bytes_lsb(tape + 8, 0xffffffffffffffffULL);
+  nexus_bits_uint64_to_bytes_lsb(tape + 16, 0x8000000000000000ULL);
+  nexus_random_generator_initialize_tape(&generator, tape, 24U);
+  error = nexus_random_source_real64_get(nexus_random_generator_source_get(&generator), &double_value);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || double_value != 0.0)
+    return nexus_test_fail(1140);
+  error = nexus_random_generator_real64_get(&generator, &double_value);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || double_value != 1.0 - (1.0 / 9007199254740992.0))
+    return nexus_test_fail(1141);
+  error = nexus_random_generator_real64_get(&generator, &double_value);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || double_value != 0.5)
+    return nexus_test_fail(1142);
+  error = nexus_random_generator_real64_get(&generator, &double_value);
+  if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_RANDOM_ERROR_TAPE_EXHAUSTED) || double_value != 0.5)
+    return nexus_test_fail(1143);
+  return 0;
+}
+
+static NexusError *nexus_test_random_failing_fill(void *state, byte *out_bytes, uint_large byte_count) {
+  (void)state;
+  if (byte_count > 0U)
+    out_bytes[0] = 0xa5U;
+  return NEXUS_PROGRAM_ERROR_FAILURE(GLOBAL_NEXUS_ENTROPY_ERROR_SOURCE_FAILED, "deliberate random source failure");
+}
+
+static int nexus_test_random_failures(void) {
+  NexusRandomGenerator generator;
+  NexusRandomSource    source;
+  NexusError          *error;
+  byte                 tape[4]   = {1U, 2U, 3U, 4U};
+  byte                 output[4] = {0xa5U, 0xa5U, 0xa5U, 0xa5U};
+  uint32               value32;
+  uint64               value64;
+  real32               float_value;
+  real64               double_value;
+
+  nexus_random_generator_initialize_tape(&generator, tape, 3U);
+  error = nexus_random_generator_fill(&generator, output, 4U);
+  if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_RANDOM_ERROR_TAPE_EXHAUSTED) || output[0] != 0xa5U || output[3] != 0xa5U)
+    return nexus_test_fail(1160);
+  error = nexus_random_generator_fill(&generator, output, 3U);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || memcmp(tape, output, 3U) != 0)
+    return nexus_test_fail(1161);
+  nexus_random_generator_initialize_tape(&generator, NULL, 0U);
+  error = nexus_random_generator_fill(&generator, NULL, 0U);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+    return nexus_test_fail(1162);
+  nexus_random_generator_initialize_counter(&generator, 0xffffffffffffffffULL, 2U);
+  error = nexus_random_generator_uint64_get(&generator, &value64);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || value64 != 0xffffffffffffffffULL)
+    return nexus_test_fail(1163);
+  error = nexus_random_generator_uint64_get(&generator, &value64);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || value64 != 1U)
+    return nexus_test_fail(1164);
+
+  source.state = NULL;
+  source.fill  = nexus_test_random_failing_fill;
+  value32      = 123U;
+  error        = nexus_random_source_uint32_get(source, &value32);
+  if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_ENTROPY_ERROR_SOURCE_FAILED) || value32 != 123U)
+    return nexus_test_fail(1165);
+  value64 = 123U;
+  error   = nexus_random_source_uint64_get(source, &value64);
+  if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_ENTROPY_ERROR_SOURCE_FAILED) || value64 != 123U)
+    return nexus_test_fail(1166);
+  error = nexus_random_source_uint32_bounded_get(source, 10U, &value32);
+  if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_ENTROPY_ERROR_SOURCE_FAILED) || value32 != 123U)
+    return nexus_test_fail(1167);
+  error = nexus_random_source_uint64_bounded_get(source, 10U, &value64);
+  if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_ENTROPY_ERROR_SOURCE_FAILED) || value64 != 123U)
+    return nexus_test_fail(1168);
+  float_value  = 0.5F;
+  double_value = 0.5;
+  error        = nexus_random_source_real32_get(source, &float_value);
+  if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_ENTROPY_ERROR_SOURCE_FAILED) || float_value != 0.5F)
+    return nexus_test_fail(1169);
+  error = nexus_random_source_real64_get(source, &double_value);
+  if (!nexus_test_random_error_has_code(error, GLOBAL_NEXUS_ENTROPY_ERROR_SOURCE_FAILED) || double_value != 0.5)
+    return nexus_test_fail(1170);
+#if NEXUS_DEVELOPER_MODE
+  {
+    jmp_buf recovery_point;
+    uint32  index;
+    for (index = 0; index < 9U; index++) {
+      nexus_random_generator_initialize_counter(&generator, 0U, 1U);
+      source = nexus_random_generator_source_get(&generator);
+      if (setjmp(recovery_point) == 0) {
+        nexus_program_recovery_arm(&recovery_point);
+        switch (index) {
+        case 0:
+          error = nexus_random_generator_uint32_bounded_get(&generator, 0U, &value32);
+          break;
+        case 1:
+          error = nexus_random_generator_uint64_bounded_get(&generator, 0U, &value64);
+          break;
+        case 2:
+          source.fill = NULL;
+          error       = nexus_random_source_uint32_get(source, &value32);
+          break;
+        case 3:
+          error = nexus_random_generator_fill(NULL, output, 1U);
+          break;
+        case 4:
+          error = nexus_random_source_real64_get(source, NULL);
+          break;
+        case 5:
+          error = nexus_random_seed_uint32_get(NULL);
+          break;
+        case 6:
+          error = nexus_random_seed_uint64_get(NULL);
+          break;
+        case 7:
+          error = nexus_random_seed_uint128_get(NULL);
+          break;
+        default:
+          error = nexus_random_seed_fill(NULL, 1U);
+          break;
+        }
+        (void)error;
+        nexus_program_recovery_disarm();
+        return nexus_test_fail(1171);
+      }
+      nexus_program_recovery_disarm();
+      error = nexus_program_recovery_last_error_get();
+      if (error->code != GLOBAL_NEXUS_PRECONDITION_VIOLATION)
+        return nexus_test_fail(1172);
+    }
+  }
+#endif
+  return 0;
+}
+
+static int nexus_test_random_seeds(void) {
+  NexusRandomGenerator first;
+  NexusRandomGenerator replay;
+  NexusError          *error;
+  byte                 bytes[34];
+  uint32               seed32;
+  uint64               seed64;
+  uint128              seed128;
+  uint64               first_value;
+  uint64               replay_value;
+
+  error = nexus_random_seed_fill(NULL, 0U);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+    return nexus_test_fail(1180);
+  bytes[0]  = 0xa5U;
+  bytes[33] = 0x5aU;
+  error     = nexus_random_seed_fill(bytes + 1, 32U);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || bytes[0] != 0xa5U || bytes[33] != 0x5aU)
+    return nexus_test_fail(1181);
+  error = nexus_random_seed_uint32_get(&seed32);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+    return nexus_test_fail(1182);
+  error = nexus_random_seed_uint64_get(&seed64);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+    return nexus_test_fail(1183);
+  error = nexus_random_seed_uint128_get(&seed128);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+    return nexus_test_fail(1184);
+
+  /* A newly drawn seed can be recorded and used to reproduce later draws. */
+  nexus_random_generator_initialize_xoroshiro128(&first, seed128);
+  nexus_random_generator_initialize_xoroshiro128(&replay, seed128);
+  error = nexus_random_generator_uint64_get(&first, &first_value);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+    return nexus_test_fail(1185);
+  error = nexus_random_generator_uint64_get(&replay, &replay_value);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS || first_value != replay_value)
+    return nexus_test_fail(1186);
+  return 0;
+}
+
+static int nexus_test_random(void) {
+  NexusError *error;
+  byte        bytes[513];
+  int         result;
+
+  error = nexus_entropy_system_fill(NULL, 0U);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+    return nexus_test_fail(1150);
+  error = nexus_entropy_system_fill(bytes, NEXUS_SIZEOF(bytes));
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+    return nexus_test_fail(1151);
+  error = nexus_random_system_fill(NULL, NULL, 0U);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+    return nexus_test_fail(1152);
+  error = nexus_random_source_fill(nexus_random_system_source_get(), bytes, NEXUS_SIZEOF(bytes));
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS)
+    return nexus_test_fail(1153);
+  result = nexus_test_random_vectors();
+  if (result != 0)
+    return result;
+  nexus_program_errors_pool_reset();
+  result = nexus_test_random_chunking();
+  if (result != 0)
+    return result;
+  result = nexus_test_random_sampling();
+  if (result != 0)
+    return result;
+  nexus_program_errors_pool_reset();
+  result = nexus_test_random_failures();
+  nexus_program_errors_pool_reset();
+  if (result != 0)
+    return result;
+  return nexus_test_random_seeds();
+}
+
 static int nexus_test_identity(void) {
-  NexusUUID             namespace_uuid;
-  NexusUUID             uuid;
-  NexusUUID             parsed;
-  NexusError           *error;
-  char                  string[NEXUS_UUID_STRING_BUFFER_SIZE];
-  byte                  tape[16];
-  NexusEntropyGenerator generator;
-  NexusEntropySource    source;
-  uint32                index;
+  NexusUUID            namespace_uuid;
+  NexusUUID            uuid;
+  NexusUUID            parsed;
+  NexusError          *error;
+  char                 string[NEXUS_UUID_STRING_BUFFER_SIZE];
+  byte                 tape[16];
+  NexusRandomGenerator generator;
+  NexusRandomSource    source;
+  uint32               index;
 
   error = nexus_identity_uuid_parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8", &namespace_uuid);
   if (error->code != NEXUS_PROGRAM_ERROR_SUCCESS()->code) {
@@ -94,9 +554,9 @@ static int nexus_test_identity(void) {
   for (index = 0; index < 16U; index++) {
     tape[index] = (byte)index;
   }
-  nexus_entropy_generator_initialize_tape(&generator, tape, 16U);
-  source = nexus_entropy_generator_source_get(&generator);
-  error  = nexus_identity_uuid_v4_generate_with_entropy(source, &uuid);
+  nexus_random_generator_initialize_tape(&generator, tape, 16U);
+  source = nexus_random_generator_source_get(&generator);
+  error  = nexus_identity_uuid_v4_generate_with_random(source, &uuid);
   if (error->code != NEXUS_PROGRAM_ERROR_SUCCESS()->code || nexus_identity_uuid_version_get(uuid) != 4U) {
     return nexus_test_fail(34);
   }
@@ -2250,7 +2710,7 @@ int main(void) {
   if (result != 0) {
     return result;
   }
-  result = nexus_test_entropy();
+  result = nexus_test_random();
   if (result != 0) {
     return result;
   }

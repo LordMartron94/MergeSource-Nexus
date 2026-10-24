@@ -417,10 +417,10 @@ static pthread_mutex_t n_identity_time_mutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
 static NexusError *n_identity_time_next(uint64 *out_timestamp, uint16 *out_sequence, uint64 *out_node) {
-  byte               random_bytes[8];
-  NexusError        *error;
-  NexusEntropySource source;
-  uint64             now;
+  byte              random_bytes[8];
+  NexusError       *error;
+  NexusRandomSource source;
+  uint64            now;
 
   NEXUS_PROGRAM_CONTEXT_PUSH("n_identity_time_next");
   NEXUS_PROGRAM_PRECONDITION(out_timestamp != NULL, "time_next: out_timestamp is NULL");
@@ -438,8 +438,8 @@ static NexusError *n_identity_time_next(uint64 *out_timestamp, uint16 *out_seque
 
   N_IDENTITY_LOCK();
   if (!n_identity_time_state.initialized) {
-    source = nexus_entropy_system_source_get();
-    error  = nexus_entropy_source_fill(source, random_bytes, sizeof(random_bytes));
+    source = nexus_random_system_source_get();
+    error  = nexus_random_source_fill(source, random_bytes, sizeof(random_bytes));
     if (error->code != NEXUS_PROGRAM_ERROR_SUCCESS()->code) {
       N_IDENTITY_UNLOCK();
       NEXUS_PROGRAM_CONTEXT_POP();
@@ -574,13 +574,13 @@ void nexus_identity_uuid_v5_generate(NexusUUID namespace_uuid, const void *name,
   *out_uuid = nexus_identity_uuid_bytes_read(bytes);
 }
 
-NexusError *nexus_identity_uuid_v4_generate_with_entropy(NexusEntropySource source, NexusUUID *out_uuid) {
+NexusError *nexus_identity_uuid_v4_generate_with_random(NexusRandomSource source, NexusUUID *out_uuid) {
   byte        bytes[16];
   NexusError *error;
-  NEXUS_PROGRAM_CONTEXT_PUSH("nexus_identity_uuid_v4_generate_with_entropy");
+  NEXUS_PROGRAM_CONTEXT_PUSH("nexus_identity_uuid_v4_generate_with_random");
   NEXUS_PROGRAM_PRECONDITION(out_uuid != NULL, "uuid_v4_generate: out_uuid is NULL");
   NEXUS_PROGRAM_PRECONDITION(source.fill != NULL, "uuid_v4_generate: source.fill is NULL");
-  error = nexus_entropy_source_fill(source, bytes, 16U);
+  error = nexus_random_source_fill(source, bytes, 16U);
   if (error->code != NEXUS_PROGRAM_ERROR_SUCCESS()->code) {
     NEXUS_PROGRAM_CONTEXT_POP();
     return error;
@@ -592,7 +592,7 @@ NexusError *nexus_identity_uuid_v4_generate_with_entropy(NexusEntropySource sour
 }
 
 NexusError *nexus_identity_uuid_v4_generate(NexusUUID *out_uuid) {
-  return nexus_identity_uuid_v4_generate_with_entropy(nexus_entropy_system_source_get(), out_uuid);
+  return nexus_identity_uuid_v4_generate_with_random(nexus_random_system_source_get(), out_uuid);
 }
 
 static NexusError *n_identity_uuid_v7_timestamp_get(uint64 *out_milliseconds) {
@@ -615,11 +615,11 @@ static void n_identity_uuid_v7_timestamp_write(byte bytes[16], uint64 millisecon
   bytes[5] = (byte)milliseconds;
 }
 
-NexusError *nexus_identity_uuid_v7_generate_random_with_entropy(NexusEntropySource source, NexusUUID *out_uuid) {
+NexusError *nexus_identity_uuid_v7_generate_with_random(NexusRandomSource source, NexusUUID *out_uuid) {
   byte        bytes[16];
   uint64      milliseconds;
   NexusError *error;
-  NEXUS_PROGRAM_CONTEXT_PUSH("nexus_identity_uuid_v7_generate_random_with_entropy");
+  NEXUS_PROGRAM_CONTEXT_PUSH("nexus_identity_uuid_v7_generate_with_random");
   NEXUS_PROGRAM_PRECONDITION(out_uuid != NULL, "uuid_v7_generate: out_uuid is NULL");
   NEXUS_PROGRAM_PRECONDITION(source.fill != NULL, "uuid_v7_generate: source.fill is NULL");
   error = n_identity_uuid_v7_timestamp_get(&milliseconds);
@@ -627,7 +627,7 @@ NexusError *nexus_identity_uuid_v7_generate_random_with_entropy(NexusEntropySour
     NEXUS_PROGRAM_CONTEXT_POP();
     return error;
   }
-  error = nexus_entropy_source_fill(source, &bytes[6], 10U);
+  error = nexus_random_source_fill(source, &bytes[6], 10U);
   if (error->code != NEXUS_PROGRAM_ERROR_SUCCESS()->code) {
     NEXUS_PROGRAM_CONTEXT_POP();
     return error;
@@ -640,7 +640,7 @@ NexusError *nexus_identity_uuid_v7_generate_random_with_entropy(NexusEntropySour
 }
 
 NexusError *nexus_identity_uuid_v7_generate_random(NexusUUID *out_uuid) {
-  return nexus_identity_uuid_v7_generate_random_with_entropy(nexus_entropy_system_source_get(), out_uuid);
+  return nexus_identity_uuid_v7_generate_with_random(nexus_random_system_source_get(), out_uuid);
 }
 
 typedef struct NIdentityV7State {
@@ -690,15 +690,15 @@ static boolean n_identity_v7_random_increment(byte random_bytes[10]) {
 }
 
 NexusError *nexus_identity_uuid_v7_generate(NexusUUID *out_uuid) {
-  NexusEntropySource source;
-  NexusError        *error;
-  byte               bytes[16];
-  uint64             milliseconds;
-  uint64             process_id;
+  NexusRandomSource source;
+  NexusError       *error;
+  byte              bytes[16];
+  uint64            milliseconds;
+  uint64            process_id;
 
   NEXUS_PROGRAM_CONTEXT_PUSH("nexus_identity_uuid_v7_generate");
   NEXUS_PROGRAM_PRECONDITION(out_uuid != NULL, "uuid_v7_generate: out_uuid is NULL");
-  source = nexus_entropy_system_source_get();
+  source = nexus_random_system_source_get();
   error  = n_identity_uuid_v7_timestamp_get(&milliseconds);
   if (error->code != NEXUS_PROGRAM_ERROR_SUCCESS()->code) {
     NEXUS_PROGRAM_CONTEXT_POP();
@@ -707,7 +707,7 @@ NexusError *nexus_identity_uuid_v7_generate(NexusUUID *out_uuid) {
   process_id = n_identity_process_id_get();
   N_IDENTITY_LOCK();
   if (!n_identity_v7_state.initialized || (uint64)n_identity_v7_state.process_id != process_id || milliseconds > n_identity_v7_state.milliseconds) {
-    error = nexus_entropy_source_fill(source, n_identity_v7_state.random_bytes, 10U);
+    error = nexus_random_source_fill(source, n_identity_v7_state.random_bytes, 10U);
     if (error->code != NEXUS_PROGRAM_ERROR_SUCCESS()->code) {
       N_IDENTITY_UNLOCK();
       NEXUS_PROGRAM_CONTEXT_POP();
