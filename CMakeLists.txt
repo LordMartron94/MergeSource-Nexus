@@ -17,6 +17,7 @@ target_compile_definitions(nexus PUBLIC
     NEXUS_DEVELOPER_MODE=$<IF:$<CONFIG:Debug>,1,0>
     NEXUS_MEMORY_DEBUG_MODE=$<IF:$<CONFIG:Debug>,1,0>
     NEXUS_MEMORY_TRACING=$<IF:$<CONFIG:Debug>,1,0>
+    $<$<BOOL:${UNIX}>:_POSIX_C_SOURCE=200809L>
 )
 # Preserve the archived build's C89 extension flags for this public header.
 # Keep them after the general warning policy, as in the archived build.

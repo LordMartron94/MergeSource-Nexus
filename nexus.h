@@ -1776,7 +1776,7 @@ Params:
 Errors: NEXUS_PROGRAM_PRECONDITION: size must be > 0; out_pointer must be non-NULL.
 */
 extern NEXUS_NODISCARD NexusError *nexus_memory_map(NexusFileHandle *file_handle, uint_large size, NexusMemoryProtection protection,
-                                                    NexusMemorySharing sharing, void **out_pointer);
+                                                    NexusMemorySharing sharing, void **out_pointer, uint_large *out_mapped_size);
 /*
 Summary: unmaps a region previously returned by nexus_memory_map. size must be the actual mapped size (see nexus_memory_map's Description), not the size originally requested.
 */
@@ -2681,15 +2681,22 @@ static NEXUS_MAYBE_UNUSED real64 nexus_bits_real64_from_bytes_msb(const byte *by
 
 /* --- Bitfield Manipulation Operations --- */
 
-static NEXUS_MAYBE_UNUSED boolean nexus_bits_uint8_get(uint8 value, uint32 bit_index) /* NOLINT */ {
+/*
+Summary: read a uint8 bit; index 0 is the LSB.
+*/
+static NEXUS_MAYBE_UNUSED boolean nexus_bits_uint8_get_lsb(uint8 value, uint32 bit_index) /* NOLINT */ {
   NEXUS_PROGRAM_PRECONDITION(bit_index < 8u, "bit_index out of range for uint8.");
   return (boolean)((value >> bit_index) & 1u);
 }
 
-static NEXUS_MAYBE_UNUSED uint8 nexus_bits_uint8_set(uint8 value, uint32 bit_index, boolean bit_value) /* NOLINT */ {
-  const uint8 mask = (uint8)(1u << bit_index);
+/*
+Summary: set or clear a uint8 bit; index 0 is the LSB.
+*/
+static NEXUS_MAYBE_UNUSED uint8 nexus_bits_uint8_set_lsb(uint8 value, uint32 bit_index, boolean bit_value) /* NOLINT */ {
+  uint8 mask;
 
   NEXUS_PROGRAM_PRECONDITION(bit_index < 8u, "bit_index out of range for uint8.");
+  mask = (uint8)(1u << bit_index);
 
   if (bit_value) {
     return (uint8)(value | mask);
@@ -2698,15 +2705,22 @@ static NEXUS_MAYBE_UNUSED uint8 nexus_bits_uint8_set(uint8 value, uint32 bit_ind
   return (uint8)(value & (uint8)~mask);
 }
 
-static NEXUS_MAYBE_UNUSED boolean nexus_bits_uint16_get(uint16 value, uint32 bit_index) /* NOLINT */ {
+/*
+Summary: read a uint16 bit; index 0 is the LSB.
+*/
+static NEXUS_MAYBE_UNUSED boolean nexus_bits_uint16_get_lsb(uint16 value, uint32 bit_index) /* NOLINT */ {
   NEXUS_PROGRAM_PRECONDITION(bit_index < 16u, "bit_index out of range for uint16.");
   return (boolean)((value >> bit_index) & 1u);
 }
 
-static NEXUS_MAYBE_UNUSED uint16 nexus_bits_uint16_set(uint16 value, uint32 bit_index, boolean bit_value) /* NOLINT */ {
-  const uint16 mask = (uint16)(1u << bit_index);
+/*
+Summary: set or clear a uint16 bit; index 0 is the LSB.
+*/
+static NEXUS_MAYBE_UNUSED uint16 nexus_bits_uint16_set_lsb(uint16 value, uint32 bit_index, boolean bit_value) /* NOLINT */ {
+  uint16 mask;
 
   NEXUS_PROGRAM_PRECONDITION(bit_index < 16u, "bit_index out of range for uint16.");
+  mask = (uint16)(1u << bit_index);
 
   if (bit_value) {
     return (uint16)(value | mask);
@@ -2715,15 +2729,22 @@ static NEXUS_MAYBE_UNUSED uint16 nexus_bits_uint16_set(uint16 value, uint32 bit_
   return (uint16)(value & (uint16)~mask);
 }
 
-static NEXUS_MAYBE_UNUSED boolean nexus_bits_uint32_get(uint32 value, uint32 bit_index) /* NOLINT */ {
+/*
+Summary: read a uint32 bit; index 0 is the LSB.
+*/
+static NEXUS_MAYBE_UNUSED boolean nexus_bits_uint32_get_lsb(uint32 value, uint32 bit_index) /* NOLINT */ {
   NEXUS_PROGRAM_PRECONDITION(bit_index < 32u, "bit_index out of range for uint32.");
   return (boolean)((value >> bit_index) & 1u);
 }
 
-static NEXUS_MAYBE_UNUSED uint32 nexus_bits_uint32_set(uint32 value, uint32 bit_index, boolean bit_value) /* NOLINT */ {
-  const uint32 mask = (uint32)(1u << bit_index);
+/*
+Summary: set or clear a uint32 bit; index 0 is the LSB.
+*/
+static NEXUS_MAYBE_UNUSED uint32 nexus_bits_uint32_set_lsb(uint32 value, uint32 bit_index, boolean bit_value) /* NOLINT */ {
+  uint32 mask;
 
   NEXUS_PROGRAM_PRECONDITION(bit_index < 32u, "bit_index out of range for uint32.");
+  mask = (uint32)(1u << bit_index);
 
   if (bit_value) {
     return value | mask;
@@ -2732,15 +2753,22 @@ static NEXUS_MAYBE_UNUSED uint32 nexus_bits_uint32_set(uint32 value, uint32 bit_
   return value & ~mask;
 }
 
-static NEXUS_MAYBE_UNUSED boolean nexus_bits_uint64_get(uint64 value, uint32 bit_index) /* NOLINT */ {
+/*
+Summary: read a uint64 bit; index 0 is the LSB.
+*/
+static NEXUS_MAYBE_UNUSED boolean nexus_bits_uint64_get_lsb(uint64 value, uint32 bit_index) /* NOLINT */ {
   NEXUS_PROGRAM_PRECONDITION(bit_index < 64u, "bit_index out of range for uint64.");
   return (boolean)((value >> bit_index) & 1u);
 }
 
-static NEXUS_MAYBE_UNUSED uint64 nexus_bits_uint64_set(uint64 value, uint32 bit_index, boolean bit_value) /* NOLINT */ {
-  const uint64 mask = ((uint64)1) << bit_index;
+/*
+Summary: set or clear a uint64 bit; index 0 is the LSB.
+*/
+static NEXUS_MAYBE_UNUSED uint64 nexus_bits_uint64_set_lsb(uint64 value, uint32 bit_index, boolean bit_value) /* NOLINT */ {
+  uint64 mask;
 
   NEXUS_PROGRAM_PRECONDITION(bit_index < 64u, "bit_index out of range for uint64.");
+  mask = ((uint64)1) << bit_index;
 
   if (bit_value) {
     return value | mask;
@@ -2749,15 +2777,142 @@ static NEXUS_MAYBE_UNUSED uint64 nexus_bits_uint64_set(uint64 value, uint32 bit_
   return value & ~mask;
 }
 
-static NEXUS_MAYBE_UNUSED boolean nexus_bits_uint_large_get(uint_large value, uint32 bit_index) /* NOLINT */ {
+/*
+Summary: read a uint_large bit; index 0 is the LSB.
+*/
+static NEXUS_MAYBE_UNUSED boolean nexus_bits_uint_large_get_lsb(uint_large value, uint32 bit_index) /* NOLINT */ {
   NEXUS_PROGRAM_PRECONDITION(bit_index < (uint32)(NEXUS_SIZEOF(uint_large) * 8u), "bit_index out of range for uint_large.");
   return (boolean)((value >> bit_index) & 1u);
 }
 
-static NEXUS_MAYBE_UNUSED uint_large nexus_bits_uint_large_set(uint_large value, uint32 bit_index, boolean bit_value) /* NOLINT */ {
-  const uint_large mask = ((uint_large)1) << bit_index;
+/*
+Summary: set or clear a uint_large bit; index 0 is the LSB.
+*/
+static NEXUS_MAYBE_UNUSED uint_large nexus_bits_uint_large_set_lsb(uint_large value, uint32 bit_index, boolean bit_value) /* NOLINT */ {
+  uint_large mask;
 
   NEXUS_PROGRAM_PRECONDITION(bit_index < (uint32)(NEXUS_SIZEOF(uint_large) * 8u), "bit_index out of range for uint_large.");
+  mask = ((uint_large)1) << bit_index;
+
+  if (bit_value) {
+    return value | mask;
+  }
+
+  return value & ~mask;
+}
+
+/*
+Summary: read a uint8 bit; index 0 is the MSB.
+*/
+static NEXUS_MAYBE_UNUSED boolean nexus_bits_uint8_get_msb(uint8 value, uint32 bit_index) /* NOLINT */ {
+  NEXUS_PROGRAM_PRECONDITION(bit_index < 8u, "bit_index out of range for uint8.");
+  return (boolean)((value >> (7u - bit_index)) & 1u);
+}
+
+/*
+Summary: set or clear a uint8 bit; index 0 is the MSB.
+*/
+static NEXUS_MAYBE_UNUSED uint8 nexus_bits_uint8_set_msb(uint8 value, uint32 bit_index, boolean bit_value) /* NOLINT */ {
+  uint8 mask;
+
+  NEXUS_PROGRAM_PRECONDITION(bit_index < 8u, "bit_index out of range for uint8.");
+  mask = (uint8)(1u << (7u - bit_index));
+
+  if (bit_value) {
+    return (uint8)(value | mask);
+  }
+
+  return (uint8)(value & (uint8)~mask);
+}
+
+/*
+Summary: read a uint16 bit; index 0 is the MSB.
+*/
+static NEXUS_MAYBE_UNUSED boolean nexus_bits_uint16_get_msb(uint16 value, uint32 bit_index) /* NOLINT */ {
+  NEXUS_PROGRAM_PRECONDITION(bit_index < 16u, "bit_index out of range for uint16.");
+  return (boolean)((value >> (15u - bit_index)) & 1u);
+}
+
+/*
+Summary: set or clear a uint16 bit; index 0 is the MSB.
+*/
+static NEXUS_MAYBE_UNUSED uint16 nexus_bits_uint16_set_msb(uint16 value, uint32 bit_index, boolean bit_value) /* NOLINT */ {
+  uint16 mask;
+
+  NEXUS_PROGRAM_PRECONDITION(bit_index < 16u, "bit_index out of range for uint16.");
+  mask = (uint16)(1u << (15u - bit_index));
+
+  if (bit_value) {
+    return (uint16)(value | mask);
+  }
+
+  return (uint16)(value & (uint16)~mask);
+}
+
+/*
+Summary: read a uint32 bit; index 0 is the MSB.
+*/
+static NEXUS_MAYBE_UNUSED boolean nexus_bits_uint32_get_msb(uint32 value, uint32 bit_index) /* NOLINT */ {
+  NEXUS_PROGRAM_PRECONDITION(bit_index < 32u, "bit_index out of range for uint32.");
+  return (boolean)((value >> (31u - bit_index)) & 1u);
+}
+
+/*
+Summary: set or clear a uint32 bit; index 0 is the MSB.
+*/
+static NEXUS_MAYBE_UNUSED uint32 nexus_bits_uint32_set_msb(uint32 value, uint32 bit_index, boolean bit_value) /* NOLINT */ {
+  uint32 mask;
+
+  NEXUS_PROGRAM_PRECONDITION(bit_index < 32u, "bit_index out of range for uint32.");
+  mask = (uint32)(1u << (31u - bit_index));
+
+  if (bit_value) {
+    return value | mask;
+  }
+
+  return value & ~mask;
+}
+
+/*
+Summary: read a uint64 bit; index 0 is the MSB.
+*/
+static NEXUS_MAYBE_UNUSED boolean nexus_bits_uint64_get_msb(uint64 value, uint32 bit_index) /* NOLINT */ {
+  NEXUS_PROGRAM_PRECONDITION(bit_index < 64u, "bit_index out of range for uint64.");
+  return (boolean)((value >> (63u - bit_index)) & 1u);
+}
+
+/*
+Summary: set or clear a uint64 bit; index 0 is the MSB.
+*/
+static NEXUS_MAYBE_UNUSED uint64 nexus_bits_uint64_set_msb(uint64 value, uint32 bit_index, boolean bit_value) /* NOLINT */ {
+  uint64 mask;
+
+  NEXUS_PROGRAM_PRECONDITION(bit_index < 64u, "bit_index out of range for uint64.");
+  mask = ((uint64)1) << (63u - bit_index);
+
+  if (bit_value) {
+    return value | mask;
+  }
+
+  return value & ~mask;
+}
+
+/*
+Summary: read a uint_large bit; index 0 is the MSB.
+*/
+static NEXUS_MAYBE_UNUSED boolean nexus_bits_uint_large_get_msb(uint_large value, uint32 bit_index) /* NOLINT */ {
+  NEXUS_PROGRAM_PRECONDITION(bit_index < (uint32)(NEXUS_SIZEOF(uint_large) * 8u), "bit_index out of range for uint_large.");
+  return (boolean)((value >> (((uint32)(NEXUS_SIZEOF(uint_large) * 8u) - 1u) - bit_index)) & 1u);
+}
+
+/*
+Summary: set or clear a uint_large bit; index 0 is the MSB.
+*/
+static NEXUS_MAYBE_UNUSED uint_large nexus_bits_uint_large_set_msb(uint_large value, uint32 bit_index, boolean bit_value) /* NOLINT */ {
+  uint_large mask;
+
+  NEXUS_PROGRAM_PRECONDITION(bit_index < (uint32)(NEXUS_SIZEOF(uint_large) * 8u), "bit_index out of range for uint_large.");
+  mask = ((uint_large)1) << (((uint32)(NEXUS_SIZEOF(uint_large) * 8u) - 1u) - bit_index);
 
   if (bit_value) {
     return value | mask;
@@ -3098,6 +3253,63 @@ static NEXUS_MAYBE_UNUSED uint32 nexus_bits_uint64_leading_zeros(uint64 value) /
     return count;
   }
 #endif
+}
+
+/* --- Full-Width Bit Reversal --- */
+
+static NEXUS_MAYBE_UNUSED uint64 nexus_bits_uint64_reverse(uint64 value) /* NOLINT */ {
+  value = ((value & 0x5555555555555555ULL) << 1) | ((value >> 1) & 0x5555555555555555ULL);
+  value = ((value & 0x3333333333333333ULL) << 2) | ((value >> 2) & 0x3333333333333333ULL);
+  value = ((value & 0x0F0F0F0F0F0F0F0FULL) << 4) | ((value >> 4) & 0x0F0F0F0F0F0F0F0FULL);
+  value = ((value & 0x00FF00FF00FF00FFULL) << 8) | ((value >> 8) & 0x00FF00FF00FF00FFULL);
+  value = ((value & 0x0000FFFF0000FFFFULL) << 16) | ((value >> 16) & 0x0000FFFF0000FFFFULL);
+  return (value << 32) | (value >> 32);
+}
+
+static NEXUS_MAYBE_UNUSED uint32 nexus_bits_uint32_reverse(uint32 value) /* NOLINT */ {
+  return (uint32)(nexus_bits_uint64_reverse((uint64)value) >> 32);
+}
+
+static NEXUS_MAYBE_UNUSED uint16 nexus_bits_uint16_reverse(uint16 value) /* NOLINT */ {
+  return (uint16)(nexus_bits_uint64_reverse((uint64)value) >> 48);
+}
+
+static NEXUS_MAYBE_UNUSED uint8 nexus_bits_uint8_reverse(uint8 value) /* NOLINT */ {
+  return (uint8)(nexus_bits_uint64_reverse((uint64)value) >> 56);
+}
+
+static NEXUS_MAYBE_UNUSED uint_large nexus_bits_uint_large_reverse(uint_large value) /* NOLINT */ {
+  NEXUS_PROGRAM_PRECONDITION(NEXUS_SIZEOF(uint_large) == 4 || NEXUS_SIZEOF(uint_large) == 8,
+                             "uint_large must be 32 or 64 bits");
+
+  return (uint_large)(nexus_bits_uint64_reverse((uint64)value) >> (64u - (NEXUS_SIZEOF(uint_large) * 8u)));
+}
+
+/* --- Partial Bit Reversal --- */
+
+static NEXUS_MAYBE_UNUSED uint8 nexus_bits_uint8_reverse_low(uint8 value, uint32 bit_count) /* NOLINT */ {
+  NEXUS_PROGRAM_PRECONDITION(bit_count <= 8u, "bit_count out of range for uint8");
+  return bit_count == 0 ? 0 : (uint8)(nexus_bits_uint8_reverse(value) >> (8u - bit_count));
+}
+
+static NEXUS_MAYBE_UNUSED uint16 nexus_bits_uint16_reverse_low(uint16 value, uint32 bit_count) /* NOLINT */ {
+  NEXUS_PROGRAM_PRECONDITION(bit_count <= 16u, "bit_count out of range for uint16");
+  return bit_count == 0 ? 0 : (uint16)(nexus_bits_uint16_reverse(value) >> (16u - bit_count));
+}
+
+static NEXUS_MAYBE_UNUSED uint32 nexus_bits_uint32_reverse_low(uint32 value, uint32 bit_count) /* NOLINT */ {
+  NEXUS_PROGRAM_PRECONDITION(bit_count <= 32u, "bit_count out of range for uint32");
+  return bit_count == 0 ? 0 : nexus_bits_uint32_reverse(value) >> (32u - bit_count);
+}
+
+static NEXUS_MAYBE_UNUSED uint64 nexus_bits_uint64_reverse_low(uint64 value, uint32 bit_count) /* NOLINT */ {
+  NEXUS_PROGRAM_PRECONDITION(bit_count <= 64u, "bit_count out of range for uint64");
+  return bit_count == 0 ? 0 : nexus_bits_uint64_reverse(value) >> (64u - bit_count);
+}
+
+static NEXUS_MAYBE_UNUSED uint_large nexus_bits_uint_large_reverse_low(uint_large value, uint32 bit_count) /* NOLINT */ {
+  NEXUS_PROGRAM_PRECONDITION(bit_count <= NEXUS_SIZEOF(uint_large) * 8u, "bit_count out of range for uint_large");
+  return bit_count == 0 ? 0 : nexus_bits_uint_large_reverse(value) >> ((NEXUS_SIZEOF(uint_large) * 8u )- bit_count);
 }
 
 /* ============================================================================ */
@@ -5298,6 +5510,41 @@ static NEXUS_MAYBE_UNUSED boolean nexus_strings_string_equals(const char *left, 
   return *left == *right;
 }
 
+/*
+Summary: TRUE if string is empty.
+*/
+static NEXUS_MAYBE_UNUSED boolean nexus_strings_string_is_empty(const char *string) {
+  return string[0] == '\0';
+}
+
+/*
+Summary: TRUE if string begins with prefix. An empty prefix always matches.
+*/
+extern boolean nexus_strings_string_starts_with(const char *string, const char *prefix);
+
+/*
+Summary: TRUE if string ends with suffix. An empty suffix always matches.
+*/
+extern boolean nexus_strings_string_ends_with(const char *string, const char *suffix);
+
+/*
+Summary: TRUE if string contains substring. An empty substring always matches.
+*/
+extern boolean nexus_strings_string_contains(const char *string, const char *substring);
+
+/*
+Summary: returns a pointer to the first occurrence of substring in string, or NULL if absent.
+Ownership: returned pointer borrows storage from string; do not free.
+*/
+extern const char *nexus_strings_string_find(const char *string, const char *substring);
+
+/*
+Summary: returns a pointer to the last occurrence of substring in string, or NULL if absent. Overlapping matches count.
+Description: an empty substring matches at the end of string.
+Ownership: returned pointer borrows storage from string; do not free.
+*/
+extern const char *nexus_strings_string_find_last(const char *string, const char *substring);
+
 /* stb_sprintf.h is third-party and written with // comments, which -std=c89 -pedantic warns about on every inclusion. */
 #ifdef __clang__
 #  pragma clang diagnostic push
@@ -6119,6 +6366,30 @@ static NEXUS_MAYBE_UNUSED boolean nexus_filesystem_path_is_absolute(const NexusP
   NEXUS_PLATFORM_UNSUPPORTED_RAISE("filesystem_path_is_absolute");
 #endif
 }
+
+/*
+Summary: TRUE if the path's filename has a nonempty extension.
+Description: leading dots alone do not constitute an extension (e.g. ".gitignore"), and dots in parent directories are ignored. Does not access the filesystem.
+*/
+extern boolean nexus_filesystem_path_has_extension(const NexusPath *path);
+
+/*
+Summary: returns the path's extension without the leading dot, or NULL if absent.
+Ownership: returned pointer borrows storage from path; do not free.
+*/
+extern const char *nexus_filesystem_path_extension_get(const NexusPath *path);
+
+/*
+Summary: TRUE if the path has the specified extension (without the leading dot).
+Description: comparison is case-sensitive.
+*/
+extern boolean nexus_filesystem_path_extension_equals(const NexusPath *path, const char *extension);
+
+/*
+Summary: TRUE if the path's extension matches any string in extensions.
+Description: extensions is a NexusDataArray of const char * values, without leading dots. Comparison is case-sensitive.
+*/
+extern boolean nexus_filesystem_path_extension_is_any_of(const NexusPath *path, const NexusDataArray *extensions);
 
 /*
 Summary: renames or moves old_path to new_path -- one rename() call, works identically for files and directories (POSIX rename() doesn't distinguish them, so Nexus doesn't invent a separate "move" name for the same operation).

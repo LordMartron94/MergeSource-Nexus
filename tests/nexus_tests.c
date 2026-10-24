@@ -204,6 +204,7 @@ static int nexus_test_data_contiguous(void) {
 static int nexus_test_bits(void) {
   byte   bytes[8];
   uint8  b[8];
+  uint32 index;
   uint32 value32;
   uint64 value64;
 
@@ -232,9 +233,90 @@ static int nexus_test_bits(void) {
     return nexus_test_fail(326);
   }
 
-  if (!nexus_bits_uint32_get(0x00000100U, 8U) || nexus_bits_uint32_get(0x00000100U, 7U) || nexus_bits_uint32_set(0U, 31U, TRUE) != 0x80000000U ||
-      nexus_bits_uint32_set(0xFFFFFFFFU, 0U, FALSE) != 0xFFFFFFFEU) {
+  if (!nexus_bits_uint32_get_lsb(0x00000100U, 8U) || nexus_bits_uint32_get_lsb(0x00000100U, 7U) ||
+      nexus_bits_uint32_set_lsb(0U, 31U, TRUE) != 0x80000000U || nexus_bits_uint32_set_lsb(0xFFFFFFFFU, 0U, FALSE) != 0xFFFFFFFEU) {
     return nexus_test_fail(327);
+  }
+
+  for (index = 0U; index < 8U; index++) {
+    const uint8  mask          = (uint8)((uint8)1U << index);
+    const uint8  all_bits      = (uint8) ~(uint8)0U;
+    const uint32 reverse_index = 8U - 1U - index;
+
+    if (nexus_bits_uint8_set_lsb(0U, index, TRUE) != mask || nexus_bits_uint8_set_msb(0U, reverse_index, TRUE) != mask ||
+        nexus_bits_uint8_set_lsb(all_bits, index, FALSE) != (uint8)(all_bits ^ mask) ||
+        nexus_bits_uint8_set_msb(all_bits, reverse_index, FALSE) != (uint8)(all_bits ^ mask) || nexus_bits_uint8_set_lsb(mask, index, TRUE) != mask ||
+        nexus_bits_uint8_set_msb(mask, reverse_index, TRUE) != mask || nexus_bits_uint8_set_lsb(0U, index, FALSE) != 0U ||
+        nexus_bits_uint8_set_msb(0U, reverse_index, FALSE) != 0U || !nexus_bits_uint8_get_lsb(mask, index) ||
+        !nexus_bits_uint8_get_msb(mask, reverse_index) || nexus_bits_uint8_get_lsb((uint8)(all_bits ^ mask), index) ||
+        nexus_bits_uint8_get_msb((uint8)(all_bits ^ mask), reverse_index)) {
+      return nexus_test_fail(350);
+    }
+  }
+
+  for (index = 0U; index < 16U; index++) {
+    const uint16 mask          = (uint16)((uint16)1U << index);
+    const uint16 all_bits      = (uint16) ~(uint16)0U;
+    const uint32 reverse_index = 16U - 1U - index;
+
+    if (nexus_bits_uint16_set_lsb(0U, index, TRUE) != mask || nexus_bits_uint16_set_msb(0U, reverse_index, TRUE) != mask ||
+        nexus_bits_uint16_set_lsb(all_bits, index, FALSE) != (uint16)(all_bits ^ mask) ||
+        nexus_bits_uint16_set_msb(all_bits, reverse_index, FALSE) != (uint16)(all_bits ^ mask) ||
+        nexus_bits_uint16_set_lsb(mask, index, TRUE) != mask || nexus_bits_uint16_set_msb(mask, reverse_index, TRUE) != mask ||
+        nexus_bits_uint16_set_lsb(0U, index, FALSE) != 0U || nexus_bits_uint16_set_msb(0U, reverse_index, FALSE) != 0U ||
+        !nexus_bits_uint16_get_lsb(mask, index) || !nexus_bits_uint16_get_msb(mask, reverse_index) ||
+        nexus_bits_uint16_get_lsb((uint16)(all_bits ^ mask), index) || nexus_bits_uint16_get_msb((uint16)(all_bits ^ mask), reverse_index)) {
+      return nexus_test_fail(351);
+    }
+  }
+
+  for (index = 0U; index < 32U; index++) {
+    const uint32 mask          = (uint32)1U << index;
+    const uint32 all_bits      = ~(uint32)0U;
+    const uint32 reverse_index = 32U - 1U - index;
+
+    if (nexus_bits_uint32_set_lsb(0U, index, TRUE) != mask || nexus_bits_uint32_set_msb(0U, reverse_index, TRUE) != mask ||
+        nexus_bits_uint32_set_lsb(all_bits, index, FALSE) != (uint32)(all_bits ^ mask) ||
+        nexus_bits_uint32_set_msb(all_bits, reverse_index, FALSE) != (uint32)(all_bits ^ mask) ||
+        nexus_bits_uint32_set_lsb(mask, index, TRUE) != mask || nexus_bits_uint32_set_msb(mask, reverse_index, TRUE) != mask ||
+        nexus_bits_uint32_set_lsb(0U, index, FALSE) != 0U || nexus_bits_uint32_set_msb(0U, reverse_index, FALSE) != 0U ||
+        !nexus_bits_uint32_get_lsb(mask, index) || !nexus_bits_uint32_get_msb(mask, reverse_index) ||
+        nexus_bits_uint32_get_lsb((uint32)(all_bits ^ mask), index) || nexus_bits_uint32_get_msb((uint32)(all_bits ^ mask), reverse_index)) {
+      return nexus_test_fail(352);
+    }
+  }
+
+  for (index = 0U; index < 64U; index++) {
+    const uint64 mask          = (uint64)1U << index;
+    const uint64 all_bits      = ~(uint64)0U;
+    const uint32 reverse_index = 64U - 1U - index;
+
+    if (nexus_bits_uint64_set_lsb(0U, index, TRUE) != mask || nexus_bits_uint64_set_msb(0U, reverse_index, TRUE) != mask ||
+        nexus_bits_uint64_set_lsb(all_bits, index, FALSE) != (uint64)(all_bits ^ mask) ||
+        nexus_bits_uint64_set_msb(all_bits, reverse_index, FALSE) != (uint64)(all_bits ^ mask) ||
+        nexus_bits_uint64_set_lsb(mask, index, TRUE) != mask || nexus_bits_uint64_set_msb(mask, reverse_index, TRUE) != mask ||
+        nexus_bits_uint64_set_lsb(0U, index, FALSE) != 0U || nexus_bits_uint64_set_msb(0U, reverse_index, FALSE) != 0U ||
+        !nexus_bits_uint64_get_lsb(mask, index) || !nexus_bits_uint64_get_msb(mask, reverse_index) ||
+        nexus_bits_uint64_get_lsb((uint64)(all_bits ^ mask), index) || nexus_bits_uint64_get_msb((uint64)(all_bits ^ mask), reverse_index)) {
+      return nexus_test_fail(353);
+    }
+  }
+
+  for (index = 0U; index < (uint32)(NEXUS_SIZEOF(uint_large) * 8U); index++) {
+    const uint_large mask          = (uint_large)1U << index;
+    const uint_large all_bits      = ~(uint_large)0U;
+    const uint32     reverse_index = (uint32)(NEXUS_SIZEOF(uint_large) * 8U) - 1U - index;
+
+    if (nexus_bits_uint_large_set_lsb(0U, index, TRUE) != mask || nexus_bits_uint_large_set_msb(0U, reverse_index, TRUE) != mask ||
+        nexus_bits_uint_large_set_lsb(all_bits, index, FALSE) != (uint_large)(all_bits ^ mask) ||
+        nexus_bits_uint_large_set_msb(all_bits, reverse_index, FALSE) != (uint_large)(all_bits ^ mask) ||
+        nexus_bits_uint_large_set_lsb(mask, index, TRUE) != mask || nexus_bits_uint_large_set_msb(mask, reverse_index, TRUE) != mask ||
+        nexus_bits_uint_large_set_lsb(0U, index, FALSE) != 0U || nexus_bits_uint_large_set_msb(0U, reverse_index, FALSE) != 0U ||
+        !nexus_bits_uint_large_get_lsb(mask, index) || !nexus_bits_uint_large_get_msb(mask, reverse_index) ||
+        nexus_bits_uint_large_get_lsb((uint_large)(all_bits ^ mask), index) ||
+        nexus_bits_uint_large_get_msb((uint_large)(all_bits ^ mask), reverse_index)) {
+      return nexus_test_fail(354);
+    }
   }
 
   nexus_bits_uint32_to_bytes_lsb(bytes, 0x01020304U);

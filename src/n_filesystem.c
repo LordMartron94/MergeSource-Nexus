@@ -26,6 +26,61 @@ extern int memfd_create(const char *name, unsigned int flags);
 #  endif
 
 /* ---------------------------------------------------------------------------- */
+/* PATHS                                                                        */
+/* ---------------------------------------------------------------------------- */
+
+boolean nexus_filesystem_path_has_extension(const NexusPath *path) {
+  return nexus_filesystem_path_extension_get(path) != NULL;
+}
+
+const char *nexus_filesystem_path_extension_get(const NexusPath *path) {
+  const char *filename;
+  const char *last_separator;
+  const char *last_dot;
+
+  last_separator = nexus_strings_string_find_last(path->buffer, "/");
+  filename       = last_separator != NULL ? last_separator + 1 : path->buffer;
+
+  last_dot = nexus_strings_string_find_last(filename, ".");
+
+  if (last_dot == NULL || last_dot[1] == '\0')
+    return NULL;
+
+  while (filename < last_dot && *filename == '.')
+    ++filename;
+
+  return filename < last_dot ? last_dot + 1 : NULL;
+}
+
+boolean nexus_filesystem_path_extension_equals(const NexusPath *path, const char *extension) {
+  const char *path_extension = nexus_filesystem_path_extension_get(path);
+
+  return path_extension != NULL && nexus_strings_string_equals(path_extension, extension);
+}
+
+boolean nexus_filesystem_path_extension_is_any_of(const NexusPath *path, const NexusDataArray *extensions) {
+  const char *path_extension;
+  uint_large  i;
+
+  NEXUS_PROGRAM_PRECONDITION(extensions != NULL, "extensions must not be NULL");
+  NEXUS_PROGRAM_PRECONDITION(extensions->element_size == sizeof(const char *), "extensions must contain string pointers");
+
+  path_extension = nexus_filesystem_path_extension_get(path);
+
+  if (path_extension == NULL)
+    return FALSE;
+
+  for (i = 0; i < extensions->capacity; i++) {
+    const char *const *extension = (const char *const *)nexus_data_array_at_const(extensions, i);
+
+    if (nexus_strings_string_equals(path_extension, *extension))
+      return TRUE;
+  }
+
+  return FALSE;
+}
+
+/* ---------------------------------------------------------------------------- */
 /* FILE I/O                                                                     */
 /* ---------------------------------------------------------------------------- */
 

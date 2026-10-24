@@ -1,4 +1,42 @@
+#include <string.h>
 #include "../nexus.h"
+
+boolean nexus_strings_string_starts_with(const char *string, const char *prefix) {
+  return strncmp(string, prefix, strlen(prefix)) == 0;
+}
+
+boolean nexus_strings_string_ends_with(const char *string, const char *suffix) {
+  uint64 string_length = nexus_strings_string_length_get(string);
+  uint64 suffix_length = nexus_strings_string_length_get(suffix);
+
+  if (suffix_length > string_length)
+    return 0;
+
+  return strcmp(string + (string_length - suffix_length), suffix) == 0;
+}
+
+boolean nexus_strings_string_contains(const char *string, const char *substring) {
+  return strstr(string, substring) != NULL;
+}
+
+const char *nexus_strings_string_find(const char *string, const char *substring) {
+  return strstr(string, substring);
+}
+
+const char *nexus_strings_string_find_last(const char *string, const char *substring) {
+  const char *cursor     = string;
+  const char *last_match = NULL;
+
+  if (*substring == '\0')
+    return string + nexus_strings_string_length_get(string);
+
+  while ((cursor = strstr(cursor, substring)) != NULL) {
+    last_match = cursor;
+    ++cursor;
+  }
+
+  return last_match;
+}
 
 static NexusError *_nexus_strings_string_builder_ensure_capacity(NexusStringBuilder *builder, uint_large additional_length) {
   uint_large  required_capacity;

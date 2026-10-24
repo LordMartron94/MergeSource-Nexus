@@ -4,6 +4,7 @@ NexusError *nexus_stack_create(uint_large usable_size, NexusStack *out_stack) {
   uint_large  page_size;
   uint_large  aligned_usable_size;
   uint_large  mapped_size;
+  uint_large  mapped_size_internal;
   void       *base;
   NexusError *error;
 
@@ -18,7 +19,7 @@ NexusError *nexus_stack_create(uint_large usable_size, NexusStack *out_stack) {
                                     "stack_create: usable_size leaves no representable guard page");
   mapped_size = aligned_usable_size + page_size; /* one extra page for the guard. */
 
-  error = nexus_memory_map(NULL, mapped_size, NMP_READ_WRITE, NMS_PRIVATE, &base);
+  error = nexus_memory_map(NULL, mapped_size, NMP_READ_WRITE, NMS_PRIVATE, &base, &mapped_size_internal);
   if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS) {
     NEXUS_PROGRAM_CONTEXT_POP();
     return error;

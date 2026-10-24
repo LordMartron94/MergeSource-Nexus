@@ -720,15 +720,30 @@ uint_large nexus_memory_page_size_get(void) {
 }
 
 NexusError *nexus_memory_map(NexusFileHandle *file_handle, uint_large size, NexusMemoryProtection protection, NexusMemorySharing sharing,
-                             void **out_pointer) {
+                             void **out_pointer, uint_large *out_mapped_size) {
   void       *mapped;
   NexusError *error;
   int         native_flags;
   int         native_descriptor;
+  uint_large  page_size;
+  uint_large  page_count;
+  uint_large  mapped_size;
 
   NEXUS_PROGRAM_CONTEXT_PUSH("nexus_memory_map");
   NEXUS_PROGRAM_PRECONDITION(size > 0, "memory_map: size must be > 0");
   NEXUS_PROGRAM_PRECONDITION(out_pointer != NULL, "memory_map: out_pointer must not be NULL");
+  NEXUS_PROGRAM_PRECONDITION(out_mapped_size != NULL, "memory_map: out_mapped_size must not be NULL");
+
+  page_size  = nexus_memory_page_size_get();
+  page_count = size / page_size;
+
+  if (size % page_size != 0)
+    page_count++;
+
+  NEXUS_PROGRAM_PRECONDITION(page_count <= UINT_LARGE_MAX_VAL / page_size, "memory_map: page-aligned size overflows");
+  mapped_size = page_count * page_size;
+
+  NEXUS_PROGRAM_PRECONDITION((uint_large)(size_t)mapped_size == mapped_size, "memory_map: mapped size exceeds size_t");
 
   native_flags      = _n_memory_sharing_to_native(sharing);
   native_descriptor = -1;
@@ -739,14 +754,16 @@ NexusError *nexus_memory_map(NexusFileHandle *file_handle, uint_large size, Nexu
     native_flags |= MAP_ANONYMOUS;
   }
 
-  mapped = mmap(NULL, (size_t)size, _n_memory_protection_to_native(protection), native_flags, native_descriptor, 0);
+  mapped = mmap(NULL, (size_t)mapped_size, _n_memory_protection_to_native(protection), native_flags, native_descriptor, 0);
   if (mapped == MAP_FAILED) {
-    error = NEXUS_PROGRAM_ERROR_FROM_ERRNO("failed to map %llu bytes", (unsigned long long)size);
+    error = NEXUS_PROGRAM_ERROR_FROM_ERRNO("failed to map %llu bytes", (unsigned long long)mapped_size);
     NEXUS_PROGRAM_CONTEXT_POP();
     return error;
   }
 
-  *out_pointer = mapped;
+  *out_pointer     = mapped;
+  *out_mapped_size = mapped_size;
+
   NEXUS_PROGRAM_CONTEXT_POP();
   return &nexus_program_errors_success;
 }
@@ -792,7 +809,7 @@ uint_large nexus_memory_page_size_get(void) {
   NEXUS_PLATFORM_UNSUPPORTED_RAISE("memory_page_size_get");
 }
 NexusError *nexus_memory_map(NexusFileHandle *file_handle, uint_large size, NexusMemoryProtection protection, NexusMemorySharing sharing,
-                             void **out_pointer) {
+                             void **out_pointer, uint_large **out_mapped_size) {
   NEXUS_PROGRAM_CONTEXT_PUSH("nexus_memory_map");
   NEXUS_PLATFORM_UNSUPPORTED_RAISE("memory_map");
 }
