@@ -479,6 +479,98 @@ NexusError *nexus_random_source_uint64_bounded_get(NexusRandomSource source, uin
   return NEXUS_PROGRAM_ERROR_SUCCESS();
 }
 
+NexusError *nexus_random_source_uint32_range_get(NexusRandomSource source, uint32 minimum, uint32 maximum, uint32 *out_value) {
+  uint32      offset;
+  NexusError *error;
+
+  NEXUS_PROGRAM_CONTEXT_PUSH("nexus_random_source_uint32_range_get");
+  NEXUS_PROGRAM_PRECONDITION(source.fill != NULL, "random source fill is NULL");
+  NEXUS_PROGRAM_PRECONDITION(out_value != NULL, "random range output is NULL");
+  NEXUS_PROGRAM_PRECONDITION(minimum < maximum, "random maximum must exceed minimum");
+  error = nexus_random_source_uint32_bounded_get(source, maximum - minimum, &offset);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS) {
+    error = NEXUS_PROGRAM_ERRORS_FORWARD(error);
+    NEXUS_PROGRAM_POSTCONDITION(error->code != GLOBAL_NEXUS_ERROR_SUCCESS, "random error forwarding returned success");
+    NEXUS_PROGRAM_CONTEXT_POP();
+    return error;
+  }
+  *out_value = minimum + offset;
+  NEXUS_PROGRAM_CONTEXT_POP();
+  return NEXUS_PROGRAM_ERROR_SUCCESS();
+}
+
+NexusError *nexus_random_source_uint64_range_get(NexusRandomSource source, uint64 minimum, uint64 maximum, uint64 *out_value) {
+  uint64      offset;
+  NexusError *error;
+
+  NEXUS_PROGRAM_CONTEXT_PUSH("nexus_random_source_uint64_range_get");
+  NEXUS_PROGRAM_PRECONDITION(source.fill != NULL, "random source fill is NULL");
+  NEXUS_PROGRAM_PRECONDITION(out_value != NULL, "random range output is NULL");
+  NEXUS_PROGRAM_PRECONDITION(minimum < maximum, "random maximum must exceed minimum");
+  error = nexus_random_source_uint64_bounded_get(source, maximum - minimum, &offset);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS) {
+    error = NEXUS_PROGRAM_ERRORS_FORWARD(error);
+    NEXUS_PROGRAM_POSTCONDITION(error->code != GLOBAL_NEXUS_ERROR_SUCCESS, "random error forwarding returned success");
+    NEXUS_PROGRAM_CONTEXT_POP();
+    return error;
+  }
+  *out_value = minimum + offset;
+  NEXUS_PROGRAM_CONTEXT_POP();
+  return NEXUS_PROGRAM_ERROR_SUCCESS();
+}
+
+NexusError *nexus_random_source_int32_range_get(NexusRandomSource source, int32 minimum, int32 maximum, int32 *out_value) {
+  uint32      offset;
+  uint32      value;
+  NexusError *error;
+
+  NEXUS_PROGRAM_CONTEXT_PUSH("nexus_random_source_int32_range_get");
+  NEXUS_PROGRAM_PRECONDITION(source.fill != NULL, "random source fill is NULL");
+  NEXUS_PROGRAM_PRECONDITION(out_value != NULL, "random range output is NULL");
+  NEXUS_PROGRAM_PRECONDITION(minimum < maximum, "random maximum must exceed minimum");
+  error = nexus_random_source_uint32_bounded_get(source, (uint32)maximum - (uint32)minimum, &offset);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS) {
+    error = NEXUS_PROGRAM_ERRORS_FORWARD(error);
+    NEXUS_PROGRAM_POSTCONDITION(error->code != GLOBAL_NEXUS_ERROR_SUCCESS, "random error forwarding returned success");
+    NEXUS_PROGRAM_CONTEXT_POP();
+    return error;
+  }
+  value = (uint32)minimum + offset;
+  /* Decode negative values through their complement, keeping every cast in range. */
+  if (value <= (uint32)INT32_MAX_VAL)
+    *out_value = (int32)value;
+  else
+    *out_value = -1 - (int32)(UINT32_MAX_VAL - value);
+  NEXUS_PROGRAM_CONTEXT_POP();
+  return NEXUS_PROGRAM_ERROR_SUCCESS();
+}
+
+NexusError *nexus_random_source_int64_range_get(NexusRandomSource source, int64 minimum, int64 maximum, int64 *out_value) {
+  uint64      offset;
+  uint64      value;
+  NexusError *error;
+
+  NEXUS_PROGRAM_CONTEXT_PUSH("nexus_random_source_int64_range_get");
+  NEXUS_PROGRAM_PRECONDITION(source.fill != NULL, "random source fill is NULL");
+  NEXUS_PROGRAM_PRECONDITION(out_value != NULL, "random range output is NULL");
+  NEXUS_PROGRAM_PRECONDITION(minimum < maximum, "random maximum must exceed minimum");
+  error = nexus_random_source_uint64_bounded_get(source, (uint64)maximum - (uint64)minimum, &offset);
+  if (error->code != GLOBAL_NEXUS_ERROR_SUCCESS) {
+    error = NEXUS_PROGRAM_ERRORS_FORWARD(error);
+    NEXUS_PROGRAM_POSTCONDITION(error->code != GLOBAL_NEXUS_ERROR_SUCCESS, "random error forwarding returned success");
+    NEXUS_PROGRAM_CONTEXT_POP();
+    return error;
+  }
+  value = (uint64)minimum + offset;
+  /* Decode negative values through their complement, keeping every cast in range. */
+  if (value <= (uint64)INT64_MAX_VAL)
+    *out_value = (int64)value;
+  else
+    *out_value = -1 - (int64)(UINT64_MAX_VAL - value);
+  NEXUS_PROGRAM_CONTEXT_POP();
+  return NEXUS_PROGRAM_ERROR_SUCCESS();
+}
+
 NexusError *nexus_random_source_real32_get(NexusRandomSource source, real32 *out_value) {
   uint32      value;
   NexusError *error;
@@ -539,4 +631,20 @@ NexusError *nexus_random_generator_uint32_bounded_get(NexusRandomGenerator *gene
 
 NexusError *nexus_random_generator_uint64_bounded_get(NexusRandomGenerator *generator, uint64 upper_bound, uint64 *out_value) {
   return nexus_random_source_uint64_bounded_get(nexus_random_generator_source_get(generator), upper_bound, out_value);
+}
+
+NexusError *nexus_random_generator_uint32_range_get(NexusRandomGenerator *generator, uint32 minimum, uint32 maximum, uint32 *out_value) {
+  return nexus_random_source_uint32_range_get(nexus_random_generator_source_get(generator), minimum, maximum, out_value);
+}
+
+NexusError *nexus_random_generator_uint64_range_get(NexusRandomGenerator *generator, uint64 minimum, uint64 maximum, uint64 *out_value) {
+  return nexus_random_source_uint64_range_get(nexus_random_generator_source_get(generator), minimum, maximum, out_value);
+}
+
+NexusError *nexus_random_generator_int32_range_get(NexusRandomGenerator *generator, int32 minimum, int32 maximum, int32 *out_value) {
+  return nexus_random_source_int32_range_get(nexus_random_generator_source_get(generator), minimum, maximum, out_value);
+}
+
+NexusError *nexus_random_generator_int64_range_get(NexusRandomGenerator *generator, int64 minimum, int64 maximum, int64 *out_value) {
+  return nexus_random_source_int64_range_get(nexus_random_generator_source_get(generator), minimum, maximum, out_value);
 }

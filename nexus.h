@@ -2254,6 +2254,80 @@ Complexity: expected O(1) draws, unbounded worst case; inherits source costs.
 extern NEXUS_NODISCARD NexusError *nexus_random_source_uint64_bounded_get(NexusRandomSource source, uint64 upper_bound, uint64 *out_value);
 
 /*
+Summary: draws one unbiased integer in [minimum, maximum) from source.
+Description: draws an unbiased offset below maximum - minimum, then adds
+  minimum. Requires uniform input draws; may consume multiple draws. A finite
+  source can exhaust after rejected draws; output remains unchanged on error.
+Params:
+  minimum    inclusive lower bound
+  maximum    exclusive upper bound; must exceed minimum
+  out_value  out; assigned only on success
+Ownership: source and output storage are borrowed, never retained.
+Errors: NULL source.fill, NULL output, or minimum >= maximum asserts.
+  Returns the selected source error chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: expected O(1) draws, unbounded worst case; inherits source costs.
+See: nexus_random_source_uint32_bounded_get
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_source_uint32_range_get(NexusRandomSource source, uint32 minimum, uint32 maximum, uint32 *out_value);
+
+/*
+Summary: draws one unbiased integer in [minimum, maximum) from source.
+Description: draws an unbiased offset below maximum - minimum, then adds
+  minimum. Requires uniform input draws; may consume multiple draws. A finite
+  source can exhaust after rejected draws; output remains unchanged on error.
+Params:
+  minimum    inclusive lower bound
+  maximum    exclusive upper bound; must exceed minimum
+  out_value  out; assigned only on success
+Ownership: source and output storage are borrowed, never retained.
+Errors: NULL source.fill, NULL output, or minimum >= maximum asserts.
+  Returns the selected source error chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: expected O(1) draws, unbounded worst case; inherits source costs.
+See: nexus_random_source_uint64_bounded_get
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_source_uint64_range_get(NexusRandomSource source, uint64 minimum, uint64 maximum, uint64 *out_value);
+
+/*
+Summary: draws one unbiased signed integer in [minimum, maximum) from source.
+Description: supports negative bounds and intervals crossing zero, including
+  spans wider than INT32_MAX_VAL. Uses unsigned arithmetic for the span
+  and sampling; signed conversion never overflows or casts outside its range.
+  Requires uniform input draws. Rejected draws may consume source state.
+Params:
+  minimum    inclusive lower bound
+  maximum    exclusive upper bound; must exceed minimum
+  out_value  out; assigned only on success
+Ownership: source and output storage are borrowed, never retained.
+Errors: NULL source.fill, NULL output, or minimum >= maximum asserts.
+  Returns the selected source error chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: expected O(1) draws, unbounded worst case; inherits source costs.
+See: nexus_random_source_uint32_range_get
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_source_int32_range_get(NexusRandomSource source, int32 minimum, int32 maximum, int32 *out_value);
+
+/*
+Summary: draws one unbiased signed integer in [minimum, maximum) from source.
+Description: supports negative bounds and intervals crossing zero, including
+  spans wider than INT64_MAX_VAL. Uses unsigned arithmetic for the span
+  and sampling; signed conversion never overflows or casts outside its range.
+  Requires uniform input draws. Rejected draws may consume source state.
+Params:
+  minimum    inclusive lower bound
+  maximum    exclusive upper bound; must exceed minimum
+  out_value  out; assigned only on success
+Ownership: source and output storage are borrowed, never retained.
+Errors: NULL source.fill, NULL output, or minimum >= maximum asserts.
+  Returns the selected source error chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: expected O(1) draws, unbounded worst case; inherits source costs.
+See: nexus_random_source_uint64_range_get
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_source_int64_range_get(NexusRandomSource source, int64 minimum, int64 maximum, int64 *out_value);
+
+/*
 Summary: draws one uniform value in [0, 1) from source.
 Description: uses the upper 24 bits of a uint32 draw, scaled by 2^-24.
   The fixed grid includes zero and excludes one; requires uniform input.
@@ -2306,6 +2380,84 @@ Thread-safety: synchronize access to shared mutable source state.
 Complexity: expected O(1) draws, unbounded worst case; inherits source costs.
 */
 extern NEXUS_NODISCARD NexusError *nexus_random_generator_uint64_bounded_get(NexusRandomGenerator *generator, uint64 upper_bound, uint64 *out_value);
+
+/*
+Summary: draws one unbiased integer in [minimum, maximum) from generator.
+Description: draws an unbiased offset below maximum - minimum, then adds
+  minimum. Requires uniform input draws; may consume multiple draws. A finite
+  source can exhaust after rejected draws; output remains unchanged on error.
+Params:
+  minimum    inclusive lower bound
+  maximum    exclusive upper bound; must exceed minimum
+  out_value  out; assigned only on success
+Ownership: generator and output storage are borrowed, never retained.
+Errors: NULL generator, NULL output, or minimum >= maximum asserts.
+  Invalid algorithms assert; returns a random tape/stream exhaustion chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: expected O(1) draws, unbounded worst case; inherits source costs.
+See: nexus_random_generator_uint32_bounded_get
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_generator_uint32_range_get(NexusRandomGenerator *generator, uint32 minimum, uint32 maximum,
+                                                                           uint32 *out_value);
+
+/*
+Summary: draws one unbiased integer in [minimum, maximum) from generator.
+Description: draws an unbiased offset below maximum - minimum, then adds
+  minimum. Requires uniform input draws; may consume multiple draws. A finite
+  source can exhaust after rejected draws; output remains unchanged on error.
+Params:
+  minimum    inclusive lower bound
+  maximum    exclusive upper bound; must exceed minimum
+  out_value  out; assigned only on success
+Ownership: generator and output storage are borrowed, never retained.
+Errors: NULL generator, NULL output, or minimum >= maximum asserts.
+  Invalid algorithms assert; returns a random tape/stream exhaustion chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: expected O(1) draws, unbounded worst case; inherits source costs.
+See: nexus_random_generator_uint64_bounded_get
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_generator_uint64_range_get(NexusRandomGenerator *generator, uint64 minimum, uint64 maximum,
+                                                                           uint64 *out_value);
+
+/*
+Summary: draws one unbiased signed integer in [minimum, maximum) from generator.
+Description: supports negative bounds and intervals crossing zero, including
+  spans wider than INT32_MAX_VAL. Uses unsigned arithmetic for the span
+  and sampling; signed conversion never overflows or casts outside its range.
+  Requires uniform input draws. Rejected draws may consume source state.
+Params:
+  minimum    inclusive lower bound
+  maximum    exclusive upper bound; must exceed minimum
+  out_value  out; assigned only on success
+Ownership: generator and output storage are borrowed, never retained.
+Errors: NULL generator, NULL output, or minimum >= maximum asserts.
+  Invalid algorithms assert; returns a random tape/stream exhaustion chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: expected O(1) draws, unbounded worst case; inherits source costs.
+See: nexus_random_generator_uint32_range_get
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_generator_int32_range_get(NexusRandomGenerator *generator, int32 minimum, int32 maximum,
+                                                                          int32 *out_value);
+
+/*
+Summary: draws one unbiased signed integer in [minimum, maximum) from generator.
+Description: supports negative bounds and intervals crossing zero, including
+  spans wider than INT64_MAX_VAL. Uses unsigned arithmetic for the span
+  and sampling; signed conversion never overflows or casts outside its range.
+  Requires uniform input draws. Rejected draws may consume source state.
+Params:
+  minimum    inclusive lower bound
+  maximum    exclusive upper bound; must exceed minimum
+  out_value  out; assigned only on success
+Ownership: generator and output storage are borrowed, never retained.
+Errors: NULL generator, NULL output, or minimum >= maximum asserts.
+  Invalid algorithms assert; returns a random tape/stream exhaustion chain.
+Thread-safety: synchronize access to shared mutable source state.
+Complexity: expected O(1) draws, unbounded worst case; inherits source costs.
+See: nexus_random_generator_uint64_range_get
+*/
+extern NEXUS_NODISCARD NexusError *nexus_random_generator_int64_range_get(NexusRandomGenerator *generator, int64 minimum, int64 maximum,
+                                                                          int64 *out_value);
 
 /*
 Summary: draws one uniform value in [0, 1) from generator.

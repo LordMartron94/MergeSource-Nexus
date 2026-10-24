@@ -28,6 +28,16 @@ tapes and counters are diagnostic fixtures. Scalar outputs change only on
 success; byte buffers must be discarded after a source failure. Rejection
 sampling may consume rejected draws before a finite source exhausts.
 
+For explicit lower and upper bounds, use
+`nexus_random_source_uint32_range_get` / `uint64_range_get`, or their
+`nexus_random_generator_*` equivalents. Signed `int32_range_get` and
+`int64_range_get` variants support negative bounds and intervals crossing
+zero, including spans wider than the signed type's positive range, without
+signed overflow or out-of-range signed casts. These draw unbiased integers in
+`[minimum, maximum)`: minimum is included, maximum is excluded, and minimum
+must be less than maximum. They retain the max-only APIs' rejection and
+failure behavior, including leaving output unchanged on failure.
+
 `NEXUS_RANDOM_SEQUENCE_VERSION` pins the byte-stream and scalar conventions
 across library releases. Named algorithms retain their specified sequences;
 generator object memory is not a serialization format. ChaCha20 follows
