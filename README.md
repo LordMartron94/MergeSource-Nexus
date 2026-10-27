@@ -10,7 +10,8 @@ The active build uses CMake; `nexus.helm` is retained as archived material.
 
 The public interface is `nexus.h`. The implementation covers platform and
 primitive types, errors and assertions, memory, containers, strings, files,
-processes, signals, threads, time, entropy, random generation, hashing, and identity.
+processes, signals, threads, time, entropy, random generation, hashing, identity,
+and Internet networking.
 
 Entropy acquisition lives in `nexus_entropy_system_fill`. General random
 generation lives in `nexus_random_*`: the system source supplies secure OS
@@ -65,12 +66,41 @@ deliberately absent. See the draft
 [ADR 0009](adr/0009-separate-entropy-and-random-generation.md) for the
 responsibility boundary and exact sequence contract.
 
+Networking lives in `nexus_network_*`: numeric IPv4/IPv6 endpoints, explicit
+OS hostname resolution, TCP/UDP socket ownership, bind/listen/accept/connect,
+partial I/O, half-close, socket options, and reusable readiness waits. The
+backend currently supports Linux; other platforms raise on use. It provides
+no event loop, TLS, HTTP, or protocol framing. Socket handles and wait sets
+must be released explicitly. See the draft
+[ADR 0010](adr/0010-low-level-internet-networking.md).
+
+For a TCP server, parse a local address, create a socket, set options before
+binding, bind, and listen. Query the local address after binding port zero
+to discover the assigned port. Accept returns a separately owned socket.
+A client resolves or parses its destination, creates a matching socket,
+and connects. When connect returns `NNO_IN_PROGRESS`, wait for readiness
+and call `nexus_network_socket_connect_finish` to inspect the final result.
+Close a failed TCP connection rather than reusing it.
+
+`NNO_WOULD_BLOCK` and pending connections are ordinary outcomes, separate
+from `NexusError`. Keep the untransferred suffix after a short TCP send.
+TCP receive distinguishes `NNO_END_OF_STREAM`; an empty UDP datagram is
+`NNO_COMPLETE`. UDP truncation is `NNO_TRUNCATED`, and the reported size is
+the full message length, potentially larger than the buffer. Only the
+buffer's capacity was written, and the discarded suffix cannot be read
+later. `nexus_network_wait` reuses a fixed-capacity wait set, reports
+readiness/error/hangup flags, and preserves its timeout across signals.
+Nonblocking I/O remains necessary after readiness because readiness is a
+hint. Successful I/O and waits allocate no Nexus memory. Resource setup,
+resolution, and diagnostics retain Nexus's documented allocation and
+synchronization contracts.
+
 From the MergeSource root:
 
 ```sh
 make configure
-make TARGET=nexus_tests JOBS=4
-ctest --test-dir build/Debug --output-on-failure -R '^nexus_tests$'
+cmake --build build/Debug --parallel 4 --target nexus_tests nexus_network_tests
+ctest --test-dir build/Debug --output-on-failure -R '^nexus(_network)?_tests$'
 ```
 
 Consumers link the CMake target `Nexus::Nexus`. Debug builds enable developer

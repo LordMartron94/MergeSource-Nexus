@@ -1,6 +1,10 @@
 file(GLOB_RECURSE nexus_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c"
 )
+# accept4 is a Linux extension; expose it only in the networking backend.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set_source_files_properties(src/n_network.c PROPERTIES COMPILE_DEFINITIONS _GNU_SOURCE=1)
+endif()
 add_library(nexus SHARED ${nexus_sources})
 add_library(Nexus::Nexus ALIAS nexus)
 target_include_directories(nexus PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -31,7 +35,13 @@ file(GLOB nexus_test_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c"
 )
 if(BUILD_TESTING AND nexus_test_sources)
+    list(REMOVE_ITEM nexus_test_sources "${CMAKE_CURRENT_SOURCE_DIR}/tests/n_network_tests.c")
     add_executable(nexus_tests ${nexus_test_sources})
     target_link_libraries(nexus_tests PRIVATE MergeSource::Options Nexus::Nexus)
     add_test(NAME nexus_tests COMMAND nexus_tests)
+
+    add_executable(nexus_network_tests tests/n_network_tests.c)
+    target_link_libraries(nexus_network_tests PRIVATE MergeSource::Options Nexus::Nexus)
+    add_test(NAME nexus_network_tests COMMAND nexus_network_tests)
+    set_tests_properties(nexus_network_tests PROPERTIES TIMEOUT 30 SKIP_RETURN_CODE 77)
 endif()

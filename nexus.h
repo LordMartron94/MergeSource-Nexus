@@ -7849,6 +7849,428 @@ static NEXUS_MAYBE_UNUSED boolean nexus_threads_atomic_pointer_compare_exchange(
 }
 
 /* ---------------------------------------------------------------------------- */
+/* NETWORK                                                                      */
+/* ---------------------------------------------------------------------------- */
+
+/*
+Summary: Internet address families; NNF_ANY is only a resolver filter.
+*/
+typedef enum NexusNetworkFamily {
+  NNF_ANY,
+  NNF_IPV4,
+  NNF_IPV6
+} NexusNetworkFamily;
+
+/*
+Summary: transport selected at socket creation and address resolution.
+*/
+typedef enum NexusNetworkProtocol {
+  NNP_TCP,
+  NNP_UDP
+} NexusNetworkProtocol;
+
+/*
+Summary: caller-owned Internet endpoint independent of native socket layouts.
+Description:
+  bytes holds 4 IPv4 or 16 IPv6 bytes in network order; unused IPv4 bytes
+  are zero. port and scope_id are host-order integers. scope_id is zero
+  for IPv4; IPv6 interface indices are explicit, never parsed from a zone
+  suffix. No native headers or byte-order conversions are needed by clients.
+Ownership: value type; no resources or borrowed storage.
+*/
+typedef struct NexusNetworkAddress {
+  NexusNetworkFamily family;
+  byte               bytes[16];
+  uint16             port;
+  uint32             scope_id;
+} NexusNetworkAddress;
+
+/*
+Summary: room for any numeric IPv4/IPv6 host text, including its terminator.
+*/
+#define NEXUS_NETWORK_ADDRESS_TEXT_CAPACITY 46U
+
+/*
+Summary: synthetic network failures; real syscall errors retain OS errno codes.
+*/
+#define NEXUS_ERROR_NETWORK_FACILITY NEXUS_PROGRAM_ERROR_FACILITY_IDENTIFIER_CREATE('N', 'E', 'T', 'W')
+typedef enum NexusNetworkErrorCategory {
+  NNEC_ADDRESS,
+  NNEC_RESOLUTION,
+  NNEC_CAPACITY,
+  NNEC_COUNT
+} NexusNetworkErrorCategory;
+#define NEXUS_NETWORK_ERROR_LIST(X, library, facility)                                                                                               \
+  X(NEXUS_NETWORK_ERROR_INVALID_ADDRESS, NNEC_ADDRESS, 1, library, facility)                                                                         \
+  X(NEXUS_NETWORK_ERROR_RESOLUTION_FAILED, NNEC_RESOLUTION, 1, library, facility)                                                                    \
+  X(NEXUS_NETWORK_ERROR_RESOLUTION_TEMPORARY, NNEC_RESOLUTION, 2, library, facility)                                                                 \
+  X(NEXUS_NETWORK_ERROR_NAME_NOT_FOUND, NNEC_RESOLUTION, 3, library, facility)                                                                       \
+  X(NEXUS_NETWORK_ERROR_BUFFER_TOO_SMALL, NNEC_CAPACITY, 1, library, facility)
+NEXUS_ERROR_FACILITY_DEFINE(NexusNetworkError, NEXUS_ERROR_LIBRARY_IDENTIFIER, NEXUS_ERROR_NETWORK_FACILITY, NEXUS_NETWORK_ERROR_LIST)
+
+/*
+Summary: parses a numeric host into an endpoint without DNS or allocation.
+Params:
+  host  borrowed, terminated IPv4/IPv6 literal; no brackets, port, or zone
+  out_address  out; changes only on success
+Ownership: borrows pointers for the call.
+Errors: NULL pointers assert. INVALID_ADDRESS for malformed text or an IPv4
+  address with nonzero scope_id. Linux backend; other platforms raise via
+  NEXUS_PLATFORM_UNSUPPORTED_RAISE, as do all non-inline network operations.
+Thread-safety: subject to Nexus error-pool synchronization on failure.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_address_parse(const char *host, uint16 port, uint32 scope_id, NexusNetworkAddress *out_address);
+/*
+Summary: formats only the numeric host, without port, brackets, or IPv6 zone.
+Params:
+  address  borrowed endpoint with concrete family
+  out_host  borrowed output; empty on failure
+  capacity  bytes available, including terminator; must be positive
+Ownership: borrows pointers for the call.
+Errors: NULL pointers, invalid family, or zero capacity assert. Returns
+  BUFFER_TOO_SMALL for insufficient capacity; otherwise OS errno on failure.
+Thread-safety: subject to Nexus error-pool synchronization on failure.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_address_format(const NexusNetworkAddress *address, char *out_host, uint_large capacity);
+/*
+Summary: resolves a host into caller-owned endpoints using the OS resolver.
+Description:
+  Blocking operation; libc may allocate. No cache, service-name lookup, or
+  implicit connection attempt. NNF_ANY permits both families. A NULL host
+  selects wildcard addresses when passive is TRUE, loopback otherwise.
+  All results use port. Retry with larger storage after BUFFER_TOO_SMALL;
+  separate calls may observe different DNS results. No addresses are written
+  unless the entire result fits. Result order follows the OS resolver.
+Params:
+  host  borrowed terminated hostname/literal, or NULL
+  out_addresses  borrowed output; may be NULL only for zero capacity
+  out_count  out; required count on success/BUFFER_TOO_SMALL, zero otherwise
+Ownership: returned addresses are values; retains no pointers.
+Errors: invalid family/protocol, NULL out_count, or inconsistent output
+  pointer/capacity assert. Returns BUFFER_TOO_SMALL, NAME_NOT_FOUND,
+  RESOLUTION_TEMPORARY, RESOLUTION_FAILED, or OS errno for EAI_SYSTEM.
+Thread-safety: caller synchronizes Nexus's shared error/memory machinery.
+Complexity: O(number of results) space in libc; no Nexus allocation.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_addresses_resolve(const char *host, uint16 port, NexusNetworkFamily family,
+                                                                   NexusNetworkProtocol protocol, boolean passive, NexusNetworkAddress *out_addresses,
+                                                                   uint32 capacity, uint32 *out_count);
+
+/*
+Summary: owned socket, closed with nexus_network_socket_close.
+Description:
+  Linux backend. No hidden buffering, framing, event loop, thread, or retries
+  beyond interrupted I/O. All socket calls borrow their handle; no operation
+  retains caller buffers. I/O and waits allocate no Nexus memory on success.
+  Errors use Nexus's shared pool. Socket creation/accept and wait-set lifecycle
+  also use the shared memory tracker. These facilities require caller
+  synchronization as documented by the error and memory subsystems.
+Ownership: unique owner; successful create/accept returns a new handle.
+Thread-safety: synchronize lifecycle, connect, mode/options changes, and
+  waits against close. Independent send and receive need no socket-local lock,
+  but shared Nexus diagnostics still require external synchronization.
+See: adr/0010-low-level-internet-networking
+*/
+typedef struct NexusNetworkSocket NexusNetworkSocket;
+
+/*
+Summary: ordinary operation outcomes, independent of genuine failures.
+Values:
+  NNO_COMPLETE  success, including zero-byte UDP messages and short TCP I/O
+  NNO_WOULD_BLOCK  retry after readiness; no data/connection transferred
+  NNO_IN_PROGRESS  connect started or remains pending
+  NNO_END_OF_STREAM  TCP peer has shut down its send side
+  NNO_TRUNCATED  one UDP datagram consumed; reported size exceeds capacity
+*/
+typedef enum NexusNetworkOutcome {
+  NNO_COMPLETE,
+  NNO_WOULD_BLOCK,
+  NNO_IN_PROGRESS,
+  NNO_END_OF_STREAM,
+  NNO_TRUNCATED
+} NexusNetworkOutcome;
+
+/*
+Summary: creates a close-on-exec TCP/UDP socket in the requested mode.
+Description: IPv6 sockets initially use IPV6_V6ONLY; change explicitly before
+  bind if dual-stack operation is wanted. No automatic bind or connect.
+Params: out_socket  out; NULL on failure
+Ownership: caller closes the returned handle.
+Errors: invalid family/protocol or NULL output asserts; OS errno on failure.
+  Allocation follows Nexus memory's abort-on-exhaustion contract.
+Thread-safety: caller synchronizes shared Nexus memory/error machinery.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_create(NexusNetworkFamily family, NexusNetworkProtocol protocol, boolean nonblocking,
+                                                               NexusNetworkSocket **out_socket);
+/*
+Summary: closes once and consumes the handle even when close reports failure.
+Description: never retries close after EINTR; Linux has already released the
+  descriptor. Does not change SIGPIPE policy or wait for peer acknowledgement.
+Params: socket  borrowed handle slot; set to NULL on every return
+Ownership: consumes *socket; concurrent users must already be quiescent.
+Errors: NULL slot/handle assert. OS errno on close failure.
+Thread-safety: exclusive access to handle and shared Nexus memory/errors.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_close(NexusNetworkSocket **socket);
+/*
+Summary: changes blocking mode, preserving unrelated native descriptor flags.
+Ownership: borrows socket for the call.
+Errors: NULL socket asserts; OS errno on failure.
+Thread-safety: exclusive mode/lifecycle access; shared error synchronization.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_nonblocking_set(NexusNetworkSocket *socket, boolean nonblocking);
+/*
+Summary: binds a socket to an explicit local endpoint; port zero is ephemeral.
+Ownership: borrows socket and address for the call.
+Errors: NULL pointers or family mismatch assert; OS errno on failure.
+Thread-safety: exclusive configuration/lifecycle access; shared errors.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_bind(NexusNetworkSocket *socket, const NexusNetworkAddress *address);
+/*
+Summary: enables TCP listening with the caller's positive backlog.
+Ownership: borrows socket for the call.
+Errors: NULL socket, non-TCP protocol, or nonpositive backlog assert;
+  OS errno on failure.
+Thread-safety: exclusive configuration/lifecycle access; shared errors.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_listen(NexusNetworkSocket *socket, int32 backlog);
+/*
+Summary: accepts one TCP peer into a close-on-exec socket of explicit mode.
+Params:
+  out_socket  out; NULL unless an acceptance completes
+  out_peer  optional borrowed output; changes only on completed acceptance
+  out_outcome  out; COMPLETE or WOULD_BLOCK on success, COMPLETE on error
+Ownership: caller closes the new socket; all pointer inputs are borrowed.
+Errors: NULL listener/out_socket/out_outcome or non-TCP listener assert;
+  OS errno on failure. Allocation follows Nexus memory's exhaustion contract.
+Thread-safety: synchronize lifecycle and shared memory/errors.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_accept(NexusNetworkSocket *listener, boolean nonblocking, NexusNetworkSocket **out_socket,
+                                                               NexusNetworkAddress *out_peer, NexusNetworkOutcome *out_outcome);
+/*
+Summary: initiates TCP connection or sets a UDP socket's default peer.
+Description:
+  COMPLETE means connected. IN_PROGRESS requires connect_finish after a
+  readable/writable/error/hangup notification. Do not call connect again
+  while pending. A failed TCP connection must be closed, not reused.
+  An interrupted TCP connect remains IN_PROGRESS, even on a blocking socket.
+Params: out_outcome  out; COMPLETE or IN_PROGRESS; COMPLETE on error
+Ownership: borrows socket, address, and output for the call.
+Errors: NULL pointers, family mismatch, or already pending connect assert;
+  OS errno on failure.
+Thread-safety: exclusive connect/lifecycle access; shared errors.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_connect(NexusNetworkSocket *socket, const NexusNetworkAddress *address,
+                                                                NexusNetworkOutcome *out_outcome);
+/*
+Summary: checks pending connection readiness and its SO_ERROR result.
+Description: never blocks. Early calls return IN_PROGRESS. A ready socket's
+  SO_ERROR is consumed once; COMPLETE means the connection succeeded.
+Params: out_outcome  out; COMPLETE or IN_PROGRESS; COMPLETE on error
+Ownership: borrows socket and output for the call.
+Errors: NULL pointers or no pending connect assert; OS errno on failure.
+Thread-safety: exclusive connect/lifecycle access; shared errors.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_connect_finish(NexusNetworkSocket *socket, NexusNetworkOutcome *out_outcome);
+/*
+Summary: queries the current local endpoint, including assigned ephemeral port.
+Params: out_address  borrowed output; changes only on success
+Ownership: borrows socket and output for the call.
+Errors: NULL pointers assert; OS errno on failure.
+Thread-safety: synchronize lifecycle and shared errors.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_local_address_get(NexusNetworkSocket *socket, NexusNetworkAddress *out_address);
+/*
+Summary: queries a connected socket's remote endpoint.
+Params: out_address  borrowed output; changes only on success
+Ownership: borrows socket and output for the call.
+Errors: NULL pointers assert; OS errno on failure, including no connected peer.
+Thread-safety: synchronize connect/lifecycle and shared errors.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_peer_address_get(NexusNetworkSocket *socket, NexusNetworkAddress *out_address);
+/*
+Summary: sends once to a connected TCP/UDP socket, suppressing SIGPIPE locally.
+Description: TCP may send fewer bytes than requested. No send-all loop or
+  allocation. A zero-size request completes; UDP transmits an empty datagram.
+Params:
+  bytes  borrowed input; NULL allowed only for zero size
+  out_size  borrowed output; transferred bytes, zero on error/WOULD_BLOCK
+  out_outcome  borrowed output; COMPLETE or WOULD_BLOCK, COMPLETE on error
+Ownership: borrows socket and all pointers for the call.
+Errors: NULL socket/outputs, invalid input pointer, or size beyond the native
+  signed I/O limit assert. OS errno on failure.
+Thread-safety: synchronize lifecycle and shared errors.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_send(NexusNetworkSocket *socket, const void *bytes, uint_large size, uint_large *out_size,
+                                                             NexusNetworkOutcome *out_outcome);
+/*
+Summary: receives once from TCP or UDP, discarding UDP sender information.
+Description:
+  TCP reports short reads or END_OF_STREAM. UDP consumes exactly one message,
+  reports empty datagrams as COMPLETE and oversized ones as TRUNCATED.
+  out_size is the full UDP message size, even if only capacity bytes fit.
+Params:
+  bytes  borrowed output; non-NULL with positive capacity
+  out_size  borrowed output; received/full message size, zero on error/would-block
+  out_outcome  borrowed output; COMPLETE/WOULD_BLOCK/END_OF_STREAM/TRUNCATED;
+    COMPLETE on error
+Ownership: borrows socket and all pointers for the call.
+Errors: NULL pointers, zero capacity, or capacity beyond the native signed I/O
+  limit assert. OS errno on failure; discard output bytes after failure.
+Thread-safety: synchronize lifecycle and shared errors.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_receive(NexusNetworkSocket *socket, void *bytes, uint_large capacity, uint_large *out_size,
+                                                                NexusNetworkOutcome *out_outcome);
+/*
+Summary: sends one UDP datagram to an explicit destination, including empty ones.
+Params:
+  bytes  borrowed input; NULL allowed only for zero size
+  out_size  borrowed output; sent bytes, zero on error/WOULD_BLOCK
+  out_outcome  borrowed output; COMPLETE/WOULD_BLOCK, COMPLETE on error
+Ownership: borrows socket, address, and all buffers for the call.
+Errors: NULL socket/address/outputs, non-UDP socket, family mismatch, invalid
+  input pointer, or size beyond the native signed I/O limit assert.
+  OS errno on failure; datagrams are never split into separate sends.
+Thread-safety: synchronize lifecycle and shared errors.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_send_to(NexusNetworkSocket *socket, const NexusNetworkAddress *address, const void *bytes,
+                                                                uint_large size, uint_large *out_size, NexusNetworkOutcome *out_outcome);
+/*
+Summary: consumes one UDP datagram, returning its full size and optional sender.
+Description: same truncation/empty-message semantics as socket_receive.
+Params:
+  bytes  borrowed output; non-NULL with positive capacity
+  out_sender  optional borrowed output; changes only after a received message
+  out_size  borrowed output; full datagram size, zero on error/WOULD_BLOCK
+  out_outcome  borrowed output; COMPLETE/WOULD_BLOCK/TRUNCATED; COMPLETE on error
+Ownership: borrows socket and all pointers for the call.
+Errors: NULL socket/bytes/size/outcome, non-UDP socket, zero capacity, or
+  capacity beyond the native signed I/O limit assert. OS errno on failure;
+  discard buffer bytes after failure.
+Thread-safety: synchronize lifecycle and shared errors.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_receive_from(NexusNetworkSocket *socket, void *bytes, uint_large capacity,
+                                                                     NexusNetworkAddress *out_sender, uint_large *out_size,
+                                                                     NexusNetworkOutcome *out_outcome);
+/*
+Summary: socket directions that an explicit shutdown operation disables.
+*/
+typedef enum NexusNetworkShutdown {
+  NNS_RECEIVE,
+  NNS_SEND,
+  NNS_BOTH
+} NexusNetworkShutdown;
+/*
+Summary: shuts down selected directions without closing the owned socket.
+Ownership: borrows socket for the call.
+Errors: NULL socket or invalid direction assert; OS errno on failure.
+Thread-safety: synchronize shutdown/lifecycle and shared errors.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_shutdown(NexusNetworkSocket *socket, NexusNetworkShutdown direction);
+
+/*
+Summary: integer socket options, independent of native constants.
+Values:
+  NNSO_*_BUFFER_SIZE  positive byte counts; Linux getters include kernel overhead
+  NNSO_TCP_NO_DELAY  TCP only
+  NNSO_IPV6_ONLY  IPv6 only; set before binding
+  Remaining options are booleans, set with exactly 0 or 1.
+*/
+typedef enum NexusNetworkSocketOption {
+  NNSO_REUSE_ADDRESS,
+  NNSO_REUSE_PORT,
+  NNSO_KEEP_ALIVE,
+  NNSO_TCP_NO_DELAY,
+  NNSO_IPV6_ONLY,
+  NNSO_BROADCAST,
+  NNSO_RECEIVE_BUFFER_SIZE,
+  NNSO_SEND_BUFFER_SIZE
+} NexusNetworkSocketOption;
+/*
+Summary: sets a boolean or byte-count socket option before its next use.
+Ownership: borrows socket for the call.
+Errors: NULL socket, invalid option/value, TCP-only option on UDP, or IPv6-only
+  option on IPv4 assert. OS errno on failure.
+Thread-safety: exclusive configuration/lifecycle access; shared errors.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_option_set(NexusNetworkSocket *socket, NexusNetworkSocketOption option, int32 value);
+/*
+Summary: reads a current socket option as a boolean or byte count.
+Params: out_value  borrowed output; changes only on success
+Ownership: borrows socket and output for the call.
+Errors: NULL pointers, invalid option, TCP-only option on UDP, or IPv6-only
+  option on IPv4 assert. OS errno on failure.
+Thread-safety: synchronize configuration/lifecycle and shared errors.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_socket_option_get(NexusNetworkSocket *socket, NexusNetworkSocketOption option, int32 *out_value);
+
+/*
+Summary: reusable native readiness storage allocated once for a fixed capacity.
+Description: readiness is a hint, not a reservation; use nonblocking sockets
+  after waiting. Each wait scans its supplied entries; no event loop or retained
+  socket registrations. timeout_ms uses a monotonic deadline across EINTR.
+Ownership: caller destroys the set; it never owns sockets or entry storage.
+Thread-safety: one waiter per set; callers synchronize shared memory/errors.
+*/
+typedef struct NexusNetworkWaitSet NexusNetworkWaitSet;
+/*
+Summary: socket readiness flags; ERROR/HANGUP/INVALID are output-only.
+Description: HANGUP can coexist with READABLE while TCP data remains buffered.
+*/
+typedef enum NexusNetworkEvent {
+  NNE_READABLE = 1,
+  NNE_WRITABLE = 2,
+  NNE_ERROR    = 4,
+  NNE_HANGUP   = 8,
+  NNE_INVALID  = 16
+} NexusNetworkEvent;
+/*
+Summary: one borrowed socket and its requested/returned readiness bitmasks.
+Ownership: caller owns the entry; socket must stay live throughout wait.
+*/
+typedef struct NexusNetworkWaitEntry {
+  NexusNetworkSocket *socket;
+  uint32              events;
+  uint32              ready_events;
+} NexusNetworkWaitEntry;
+/*
+Summary: allocates readiness scratch space for capacity entries.
+Returns: newly owned wait set.
+Ownership: release with nexus_network_wait_set_destroy.
+Errors: zero capacity or allocation-size overflow assert. Allocation follows
+  Nexus memory's abort-on-exhaustion contract.
+Thread-safety: caller synchronizes shared memory machinery.
+Complexity: O(capacity) storage, allocated only here.
+*/
+extern NexusNetworkWaitSet *nexus_network_wait_set_create(uint32 capacity);
+/*
+Summary: releases readiness storage and nulls the owner's handle slot.
+Ownership: consumes *set; borrows slot.
+Errors: NULL slot/handle assert.
+Thread-safety: exclusive access, including no active wait; shared memory.
+*/
+extern void nexus_network_wait_set_destroy(NexusNetworkWaitSet **set);
+/*
+Summary: waits for readiness on at most the set's configured capacity.
+Description:
+  timeout_ms is -1 for unlimited wait, 0 for polling, positive for a relative
+  timeout. Signals do not restart that timeout. Zero entries are allowed.
+  All ready_events and out_ready_count are cleared before waiting, including
+  on failure. Error/hangup/invalid are returned even if not requested.
+Params:
+  entries  borrowed mutable array; NULL only when count is zero
+  out_ready_count  borrowed output; number of entries with any ready event
+Ownership: borrows set, entries, their sockets, and output for the call.
+Errors: NULL set/output, invalid entries, excessive count, invalid input
+  event bits, or timeout below -1 assert. OS errno on poll/clock failure.
+Thread-safety: exclusive set access; sockets must not be closed during wait;
+  shared error synchronization on failure.
+Complexity: O(count) time per scan, O(1) extra space; no Nexus allocation.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_network_wait(NexusNetworkWaitSet *set, NexusNetworkWaitEntry *entries, uint32 count, int32 timeout_ms,
+                                                      uint32 *out_ready_count);
+
+/* ---------------------------------------------------------------------------- */
 /* VERSION                                                                      */
 /* ---------------------------------------------------------------------------- */
 
