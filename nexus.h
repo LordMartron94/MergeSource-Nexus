@@ -962,6 +962,35 @@ Ownership: both arguments must already be valid NexusError pointers (pool-reside
   of the static sentinels); this call does not allocate, free, or take ownership of either.
 */
 extern void nexus_program_errors_wrap(NexusError *current, NexusError *internal);
+
+/*
+Summary: constructs an outer error from code and format, linking internal as its cause.
+Description: captures this call site's file and line. Evaluates each argument once,
+  formats immediately, and consumes one error-pool slot without growing the pool.
+  Uses the same variadic-macro extensions as NEXUS_PROGRAM_ERROR_FAILURE.
+Params:
+  internal  borrowed, non-NULL cause; its existing chain is preserved
+  code  the new outer error's code
+  format  nullable printf-style format followed by matching arguments
+Returns: a new pooled outer error, or the unchanged pool-capacity sentinel on exhaustion.
+Ownership: neither frees nor modifies internal. The result and any pooled cause
+  remain valid until nexus_program_errors_pool_reset; callers never free them.
+Errors: NULL internal asserts. Formatting and capacity follow
+  _nexus_program_errors_failure_create's contract. On exhaustion no cause is linked.
+Thread-safety: follows the error pool's synchronization policy; do not reset the
+  pool or mutate the borrowed cause while constructing or using its chain.
+Example: return NEXUS_PROGRAM_ERRORS_WRAP(error, code, "opening %s", path);
+*/
+#define NEXUS_PROGRAM_ERRORS_WRAP(internal, code, format, ...)                                                                                       \
+  _nexus_program_errors_wrap((internal), (code), (format), __FILE__, __LINE__, ##__VA_ARGS__)
+
+/*
+Summary: internal implementation of NEXUS_PROGRAM_ERRORS_WRAP with explicit source location.
+See: NEXUS_PROGRAM_ERRORS_WRAP for the full contract.
+*/
+extern NEXUS_NODISCARD NexusError *_nexus_program_errors_wrap(NexusError *internal, NexusErrorCode code, const char *format, const char *file,
+                                                              uint32 line, ...);
+
 /*
 Summary: internal -- creates a "forwarding" marker error wrapping forwarded; call through NEXUS_PROGRAM_ERRORS_FORWARD, not directly, so file/line are captured at the real call site.
 Description: the marker's own code is GLOBAL_NEXUS_ERROR_FORWARD, printed by
@@ -1756,34 +1785,60 @@ typedef enum NexusMemorySharing {
 } NexusMemorySharing;
 
 /*
-Summary: the OS page size (mmap/mprotect addresses and lengths for a partial-region call like nexus_memory_protect must be a multiple of this).
+Summary: the OS page size used to align mapping and protection addresses.
 */
 extern NEXUS_NODISCARD uint_large nexus_memory_page_size_get(void);
 /*
-Summary: maps size bytes of memory with protection and sharing, either freshly allocated and
-  zero-filled (file_handle NULL) or backed by file_handle at its current position 0.
-Description: size need not be page-aligned -- mmap rounds up internally -- but the actual
-  mapped region (and therefore what nexus_memory_unmap must be given back) is always a whole
-  number of pages, which may be larger than size. NexusStack (see below) tracks this for you;
-  a caller using this directly must track it themselves the same way. file_handle is read via
-  nexus_filesystem_file_descriptor_get, so any handle nexus_filesystem_file_open or
-  nexus_filesystem_file_anonymous_create produces works here -- flush it first if you wrote to
-  it through the stdio-buffered nexus_filesystem_file_write, since that buffering can otherwise
-  leave the mapped view stale.
+Summary: maps size usable bytes, anonymously or from file offset zero.
+Description:
+  A NULL file_handle creates zero-filled anonymous memory. Otherwise maps
+  the file from offset zero, independently of its stream position. The file
+  must already contain at least size bytes; this call never resizes it.
+  Flush buffered writes first. Use nexus_filesystem_file_size_get to query
+  its OS-visible size and nexus_filesystem_file_resize to grow it explicitly.
+  size need not be page-aligned. The OS covers whole pages internally, but
+  bytes beyond size are outside this API's usable range, including the tail
+  of a file's final page. Use the returned size unchanged for unmap/protect.
+  Shared writes update the file; private writes do not. Unmapping is not a
+  durability barrier for shared writes.
 Params:
-  file_handle  NULL for an anonymous mapping (matches every existing caller's behavior); a
-    handle from nexus_filesystem_file_open/file_anonymous_create to map that file instead
-Errors: NEXUS_PROGRAM_PRECONDITION: size must be > 0; out_pointer must be non-NULL.
+  file_handle  nullable borrowed handle; may be closed after mapping succeeds
+  out_pointer  out; page-aligned base on success, NULL on returned failure
+  out_mapped_size  out; exactly size on success, zero on returned failure;
+    usable byte length, not the OS's page-rounded address-space extent
+Ownership: caller owns the mapping; release with nexus_memory_unmap.
+Errors:
+  Zero size, size exceeding size_t, or NULL output pointers assert.
+  Returns NEXUS_FILESYSTEM_ERROR_FILE_TOO_SMALL when size exceeds EOF,
+  file-size query errors, or an OS error when mmap fails.
+Thread-safety:
+  Caller must synchronize buffered I/O and file resizing with mapping and
+  use. The EOF check is a snapshot: later truncation can still cause SIGBUS.
+See: adr/0011-explicit-file-sizing-for-memory-maps
 */
 extern NEXUS_NODISCARD NexusError *nexus_memory_map(NexusFileHandle *file_handle, uint_large size, NexusMemoryProtection protection,
                                                     NexusMemorySharing sharing, void **out_pointer, uint_large *out_mapped_size);
 /*
-Summary: unmaps a region previously returned by nexus_memory_map. size must be the actual mapped size (see nexus_memory_map's Description), not the size originally requested.
+Summary: unmaps a region previously returned by nexus_memory_map.
+Description: pass the returned base and byte length unchanged. The starting
+  address must be page-aligned; size need not be. Every intersecting page
+  is unmapped, so a partial unmap also affects its final page in full.
+Ownership: on success releases the specified pages; their pointers are invalid.
+Errors:
+  NULL pointer, zero size, or size exceeding size_t assert.
+  Returns an OS error on munmap failure, including an unaligned address.
+Thread-safety: caller must quiesce access to the pages being unmapped.
 */
 extern NEXUS_NODISCARD NexusError *nexus_memory_unmap(void *pointer, uint_large size);
 /*
-Summary: changes the protection of an existing mapped region (or a page-aligned sub-range of one, e.g. carving out a guard page) to protection.
-Errors: NEXUS_PROGRAM_ERROR_FROM_ERRNO with errno EINVAL if pointer/size aren't page-aligned -- unlike nexus_memory_map, mprotect never rounds on your behalf.
+Summary: changes access protection for pages intersecting a mapped byte range.
+Description: pointer must be page-aligned; size need not be. Every page
+  intersecting the range changes protection, including its final page.
+Ownership: borrows the mapping; does not release or enlarge its usable range.
+Errors:
+  NULL pointer, zero size, or size exceeding size_t assert.
+  Returns an OS error on mprotect failure, including an unaligned address.
+Thread-safety: caller must synchronize access with protection changes.
 */
 extern NEXUS_NODISCARD NexusError *nexus_memory_protect(void *pointer, uint_large size, NexusMemoryProtection protection);
 
@@ -6939,11 +6994,55 @@ typedef enum NexusFilesystemErrorCategory {
 /*
 Summary: the filesystem subsystem's own synthetic error list, defining NexusFilesystemError via NEXUS_ERROR_FACILITY_DEFINE below.
 */
-#define NEXUS_FILESYSTEM_ERROR_LIST(X, library, facility) X(NEXUS_FILESYSTEM_ERROR_REGEX_PATTERN_INVALID, NFSEC_GENERIC, 1, library, facility)
+#define NEXUS_FILESYSTEM_ERROR_LIST(X, library, facility)                                                                                            \
+  X(NEXUS_FILESYSTEM_ERROR_REGEX_PATTERN_INVALID, NFSEC_GENERIC, 1, library, facility)                                                               \
+  X(NEXUS_FILESYSTEM_ERROR_FILE_TOO_SMALL, NFSEC_GENERIC, 2, library, facility)                                                                      \
+  X(NEXUS_FILESYSTEM_ERROR_FILE_SIZE_OUT_OF_RANGE, NFSEC_GENERIC, 3, library, facility)
 
 NEXUS_ERROR_FACILITY_DEFINE(NexusFilesystemError, NEXUS_ERROR_LIBRARY_IDENTIFIER, NEXUS_ERROR_FILESYSTEM_FACILITY, NEXUS_FILESYSTEM_ERROR_LIST)
 
+/*
+Summary: opens file_path with the requested stream mode.
+Description: NFM_READ_BINARY_PLUS preserves existing contents and size;
+  NFM_WRITE_BINARY_PLUS creates or truncates the file to zero bytes.
+  Neither mode extends a file for mapping. Call nexus_filesystem_file_resize
+  explicitly before mapping more bytes than the file currently contains.
+Ownership: caller owns the returned handle; close with nexus_filesystem_file_close.
+Errors: invalid mode asserts; returns an OS error if fopen fails.
+*/
 extern NEXUS_NODISCARD NexusError *nexus_filesystem_file_open(const NexusPath *file_path, NexusFileMode mode, NexusFileHandle **out_file_handle);
+/*
+Summary: queries the OS-visible byte length of an open file.
+Description: does not move the stream position or flush buffered writes;
+  flush first when pending output must be included. Intended for regular
+  files and anonymous memory-backed files; device sizes need not describe
+  mappable ranges.
+Params: out_size  out; byte length on success, zero on returned failure
+Ownership: borrows file_handle; does not retain or close it.
+Errors:
+  NULL file_handle or out_size assert. Returns an OS error on fstat failure,
+  or NEXUS_FILESYSTEM_ERROR_FILE_SIZE_OUT_OF_RANGE for an unrepresentable size.
+Thread-safety: a size snapshot; synchronize with writes and resizing as needed.
+*/
+extern NEXUS_NODISCARD NexusError *nexus_filesystem_file_size_get(NexusFileHandle *file_handle, uint_large *out_size);
+/*
+Summary: grows or shrinks an open writable file to exactly size bytes.
+Description:
+  Synchronizes buffered I/O before resizing. Growth preserves the existing
+  prefix and makes new bytes read as zero; shrink discards the removed data.
+  Zero size is valid. The stream position is unchanged, even beyond the new
+  EOF. Does not clear stream error/EOF indicators, remap existing views, or
+  reserve physical storage. A resize failure may follow a successful flush.
+  Shrinking a mapped file requires all users to stop accessing the removed
+  range first; later accesses may cause SIGBUS.
+Ownership: borrows file_handle; does not retain or close it.
+Errors:
+  NULL file_handle asserts. Returns NEXUS_FILESYSTEM_ERROR_FILE_SIZE_OUT_OF_RANGE
+  when size exceeds off_t, or an OS error on flush/ftruncate failure.
+Thread-safety: caller must synchronize stream I/O, resizing, and mapped access.
+See: nexus_memory_map
+*/
+extern NEXUS_NODISCARD NexusError *nexus_filesystem_file_resize(NexusFileHandle *file_handle, uint_large size);
 /*
 Summary: creates an anonymous, unnamed file backed by memory rather than a path -- readable,
   writable, and resizable through the same nexus_filesystem_file_* functions as any file opened
@@ -6962,6 +7061,8 @@ Ownership: *out_file_handle is owned by the caller; release it with nexus_filesy
   same as a path-backed handle.
 Errors: NEXUS_PROGRAM_PRECONDITION: initial_size must be greater than 0; out_file_handle must be
   non-NULL.
+  Returns NEXUS_FILESYSTEM_ERROR_FILE_SIZE_OUT_OF_RANGE when initial_size
+  exceeds off_t, or an OS error on creation, sizing, or fdopen failure.
 */
 extern NEXUS_NODISCARD NexusError *nexus_filesystem_file_anonymous_create(uint_large initial_size, NexusFileHandle **out_file_handle);
 /*

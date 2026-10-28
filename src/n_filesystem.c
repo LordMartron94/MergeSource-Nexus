@@ -8,6 +8,8 @@
 #  include <regex.h>
 #  include <stdio.h>
 #  include <stdlib.h>
+#  include <sys/stat.h>
+#  include <sys/types.h>
 #  include <unistd.h>
 
 /* memfd_create lives in <sys/mman.h> alongside mmap/munmap/mprotect, which nexus.h poisons
@@ -158,6 +160,13 @@ NexusError *nexus_filesystem_file_anonymous_create(uint_large initial_size, Nexu
   NEXUS_PROGRAM_PRECONDITION(initial_size > 0, "nexus_filesystem_file_anonymous_create: initial_size must be > 0");
   NEXUS_PROGRAM_PRECONDITION(out_file_handle != NULL, "nexus_filesystem_file_anonymous_create: out_file_handle must not be NULL");
 
+  if ((off_t)initial_size < 0 || (uint_large)(off_t)initial_size != initial_size) {
+    error = NEXUS_PROGRAM_ERROR_FAILURE(NEXUS_FILESYSTEM_ERROR_FILE_SIZE_OUT_OF_RANGE, "anonymous file size %llu exceeds off_t",
+                                        (unsigned long long)initial_size);
+    NEXUS_PROGRAM_CONTEXT_POP();
+    return error;
+  }
+
   raw_descriptor = memfd_create("nexus-anonymous-file", N_FILESYSTEM_MFD_CLOEXEC);
   if (raw_descriptor < 0) {
     error = NEXUS_PROGRAM_ERROR_FROM_ERRNO("memfd_create failed");
@@ -200,6 +209,64 @@ int32 nexus_filesystem_file_descriptor_get(NexusFileHandle *file_handle) {
 
   NEXUS_PROGRAM_CONTEXT_POP();
   return (int32)fileno((FILE *)file_handle);
+}
+
+NexusError *nexus_filesystem_file_size_get(NexusFileHandle *file_handle, uint_large *out_size) {
+  struct stat status;
+  NexusError *error;
+
+  NEXUS_PROGRAM_CONTEXT_PUSH("nexus_filesystem_file_size_get");
+  NEXUS_PROGRAM_PRECONDITION(file_handle != NULL, "file_size_get: file_handle must not be NULL");
+  NEXUS_PROGRAM_PRECONDITION(out_size != NULL, "file_size_get: out_size must not be NULL");
+
+  *out_size = 0;
+  if (fstat(fileno((FILE *)file_handle), &status) != 0) {
+    error = NEXUS_PROGRAM_ERROR_FROM_ERRNO("failed to query file size");
+    NEXUS_PROGRAM_CONTEXT_POP();
+    return error;
+  }
+
+  if (status.st_size < 0 || (off_t)(uint_large)status.st_size != status.st_size) {
+    error = NEXUS_PROGRAM_ERROR_FAILURE(NEXUS_FILESYSTEM_ERROR_FILE_SIZE_OUT_OF_RANGE, "file size cannot be represented as uint_large");
+    NEXUS_PROGRAM_CONTEXT_POP();
+    return error;
+  }
+
+  *out_size = (uint_large)status.st_size;
+  NEXUS_PROGRAM_CONTEXT_POP();
+  return &nexus_program_errors_success;
+}
+
+NexusError *nexus_filesystem_file_resize(NexusFileHandle *file_handle, uint_large size) {
+  NexusError *error;
+  FILE       *file;
+
+  NEXUS_PROGRAM_CONTEXT_PUSH("nexus_filesystem_file_resize");
+  NEXUS_PROGRAM_PRECONDITION(file_handle != NULL, "file_resize: file_handle must not be NULL");
+
+  if ((off_t)size < 0 || (uint_large)(off_t)size != size) {
+    error = NEXUS_PROGRAM_ERROR_FAILURE(NEXUS_FILESYSTEM_ERROR_FILE_SIZE_OUT_OF_RANGE, "file size %llu exceeds off_t", (unsigned long long)size);
+    NEXUS_PROGRAM_CONTEXT_POP();
+    return error;
+  }
+
+  file = (FILE *)file_handle;
+  /* POSIX fflush also discards unread buffered input on a seekable stream,
+     keeping stale read-ahead from surviving a shrink. */
+  if (fflush(file) != 0) {
+    error = NEXUS_PROGRAM_ERROR_FROM_ERRNO("failed to synchronize file before resizing");
+    NEXUS_PROGRAM_CONTEXT_POP();
+    return error;
+  }
+
+  if (ftruncate(fileno(file), (off_t)size) != 0) {
+    error = NEXUS_PROGRAM_ERROR_FROM_ERRNO("failed to resize file to %llu bytes", (unsigned long long)size);
+    NEXUS_PROGRAM_CONTEXT_POP();
+    return error;
+  }
+
+  NEXUS_PROGRAM_CONTEXT_POP();
+  return &nexus_program_errors_success;
 }
 
 NexusError *nexus_filesystem_file_close(NexusFileHandle *file_handle) {
@@ -954,6 +1021,14 @@ NexusError *nexus_filesystem_file_anonymous_create(uint_large initial_size, Nexu
 int32 nexus_filesystem_file_descriptor_get(NexusFileHandle *file_handle) {
   NEXUS_PROGRAM_CONTEXT_PUSH("nexus_filesystem_file_descriptor_get");
   NEXUS_PLATFORM_UNSUPPORTED_RAISE("filesystem_file_descriptor_get");
+}
+NexusError *nexus_filesystem_file_size_get(NexusFileHandle *file_handle, uint_large *out_size) {
+  NEXUS_PROGRAM_CONTEXT_PUSH("nexus_filesystem_file_size_get");
+  NEXUS_PLATFORM_UNSUPPORTED_RAISE("filesystem_file_size_get");
+}
+NexusError *nexus_filesystem_file_resize(NexusFileHandle *file_handle, uint_large size) {
+  NEXUS_PROGRAM_CONTEXT_PUSH("nexus_filesystem_file_resize");
+  NEXUS_PLATFORM_UNSUPPORTED_RAISE("filesystem_file_resize");
 }
 NexusError *nexus_filesystem_file_close(NexusFileHandle *file_handle) {
   NEXUS_PROGRAM_CONTEXT_PUSH("nexus_filesystem_file_close");

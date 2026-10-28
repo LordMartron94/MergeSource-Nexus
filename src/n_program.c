@@ -426,6 +426,23 @@ void nexus_program_errors_wrap(NexusError *current, NexusError *internal) {
   current->contained_error = internal;
 }
 
+NexusError *_nexus_program_errors_wrap(NexusError *internal, NexusErrorCode code, const char *format, const char *file, uint32 line, ...) {
+  NexusError *outer_error;
+  va_list     args;
+
+  NEXUS_PROGRAM_PRECONDITION(internal != NULL, "internal error must not be NULL");
+
+  va_start(args, line);
+  outer_error = _nexus_program_errors_failure_create_v(code, format, file, line, args);
+  va_end(args);
+
+  if (outer_error != &nexus_program_errors_pool_capacity_reached) {
+    outer_error->contained_error = internal;
+  }
+
+  return outer_error;
+}
+
 NexusError *_nexus_program_errors_forward(NexusError *forwarded, const char *file, uint32 line) {
   NexusError *outer_error;
 

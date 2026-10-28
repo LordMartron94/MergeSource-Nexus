@@ -25,6 +25,81 @@ static int nexus_test_fail(int code) {
   return code;
 }
 
+static int nexus_test_errors_wrap(void) {
+  NexusError    *cause;
+  NexusError    *outer;
+  NexusError    *plain;
+  NexusError    *causes[1];
+  NexusErrorCode codes[1];
+  const char    *formats[1];
+  uint32         line;
+  uint32         cause_reads;
+  uint32         code_reads;
+  uint32         format_reads;
+  uint32         argument_reads;
+  uint64         slot;
+  uint64         capacity;
+
+  nexus_program_errors_pool_reset();
+  cause = NEXUS_PROGRAM_ERROR_FAILURE(GLOBAL_NEXUS_ERROR_FORWARD, "root cause");
+  line  = __LINE__ + 1U;
+  outer = NEXUS_PROGRAM_ERRORS_WRAP(cause, GLOBAL_NEXUS_ERROR_FORWARD, "opening %s: %u", "audio.flac", 7U);
+  if (outer == cause || outer->code != GLOBAL_NEXUS_ERROR_FORWARD || outer->contained_error != cause || cause->contained_error != NULL ||
+      !nexus_strings_string_equals(cause->message, "root cause") || !nexus_strings_string_equals(outer->message, "opening audio.flac: 7") ||
+      !nexus_strings_string_equals(outer->file, __FILE__) || outer->line != line) {
+    return nexus_test_fail(1300);
+  }
+
+  plain = NEXUS_PROGRAM_ERRORS_WRAP(outer, GLOBAL_NEXUS_ERROR_FORWARD, "plain message");
+  if (plain->contained_error != outer || outer->contained_error != cause || !nexus_strings_string_equals(plain->message, "plain message")) {
+    return nexus_test_fail(1301);
+  }
+  outer = NEXUS_PROGRAM_ERRORS_WRAP(plain, GLOBAL_NEXUS_ERROR_FORWARD, NULL);
+  if (outer->message != NULL || outer->contained_error != plain) {
+    return nexus_test_fail(1302);
+  }
+
+  causes[0]      = cause;
+  codes[0]       = GLOBAL_NEXUS_ERROR_FORWARD;
+  formats[0]     = "evaluation %u";
+  cause_reads    = 0U;
+  code_reads     = 0U;
+  format_reads   = 0U;
+  argument_reads = 0U;
+  outer          = NEXUS_PROGRAM_ERRORS_WRAP(causes[cause_reads++], codes[code_reads++], formats[format_reads++], ++argument_reads);
+  if (cause_reads != 1U || code_reads != 1U || format_reads != 1U || argument_reads != 1U || outer->contained_error != cause ||
+      !nexus_strings_string_equals(outer->message, "evaluation 1")) {
+    return nexus_test_fail(1303);
+  }
+
+  /* An ordinary pooled error may itself carry the pool-capacity code. */
+  outer = NEXUS_PROGRAM_ERRORS_WRAP(cause, GLOBAL_NEXUS_ERROR_POOL_CAPACITY_REACHED, NULL);
+  if (outer == &nexus_program_errors_pool_capacity_reached || outer->code != GLOBAL_NEXUS_ERROR_POOL_CAPACITY_REACHED ||
+      outer->contained_error != cause) {
+    return nexus_test_fail(1304);
+  }
+
+  nexus_program_errors_pool_reset();
+  capacity = nexus_program_errors_pool_slabs_get() * NEXUS_PROGRAM_ERROR_POOL_SLAB_SIZE;
+  cause    = NEXUS_PROGRAM_ERROR_FAILURE(GLOBAL_NEXUS_ERROR_FORWARD, NULL);
+  for (slot = 1U; slot < capacity; slot++) {
+    outer = NEXUS_PROGRAM_ERRORS_WRAP(cause, GLOBAL_NEXUS_ERROR_FORWARD, NULL);
+    if (outer == &nexus_program_errors_pool_capacity_reached || outer->contained_error != cause) {
+      return nexus_test_fail(1305);
+    }
+  }
+
+  /* Exhaustion must not attach a cause to the shared static sentinel. */
+  outer = NEXUS_PROGRAM_ERRORS_WRAP(cause, GLOBAL_NEXUS_ERROR_FORWARD, "pool full");
+  if (outer != &nexus_program_errors_pool_capacity_reached || outer->code != GLOBAL_NEXUS_ERROR_POOL_CAPACITY_REACHED ||
+      outer->contained_error != NULL || cause->contained_error != NULL) {
+    return nexus_test_fail(1306);
+  }
+  nexus_program_errors_pool_reset();
+
+  return 0;
+}
+
 static int nexus_test_hashes(void) {
   static const char text[] = "hello";
   if (nexus_hash_fnv1a32(text, 5U) != 0x4f9f2cabU) {
@@ -3019,6 +3094,10 @@ static int nexus_test_data_pointer_size_assertions(void) {
 
 int main(void) {
   int result;
+  result = nexus_test_errors_wrap();
+  if (result != 0) {
+    return result;
+  }
   result = nexus_test_hashes();
   if (result != 0) {
     return result;

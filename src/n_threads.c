@@ -36,7 +36,6 @@ void nexus_threads_sleep(NexusDuration duration) {
   struct timespec sleep_time;
 
   NEXUS_PROGRAM_CONTEXT_PUSH("nexus_threads_sleep");
-  NEXUS_PROGRAM_ASSERT(duration.nanoseconds >= 0, "threads_sleep: duration must not be negative");
 
   if (duration.nanoseconds <= 0) {
     NEXUS_PROGRAM_CONTEXT_POP();

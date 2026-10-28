@@ -35,7 +35,10 @@ file(GLOB nexus_test_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c"
 )
 if(BUILD_TESTING AND nexus_test_sources)
-    list(REMOVE_ITEM nexus_test_sources "${CMAKE_CURRENT_SOURCE_DIR}/tests/n_network_tests.c")
+    list(REMOVE_ITEM nexus_test_sources
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/n_network_tests.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/n_mapping_tests.c"
+    )
     add_executable(nexus_tests ${nexus_test_sources})
     target_link_libraries(nexus_tests PRIVATE MergeSource::Options Nexus::Nexus)
     add_test(NAME nexus_tests COMMAND nexus_tests)
@@ -44,4 +47,9 @@ if(BUILD_TESTING AND nexus_test_sources)
     target_link_libraries(nexus_network_tests PRIVATE MergeSource::Options Nexus::Nexus)
     add_test(NAME nexus_network_tests COMMAND nexus_network_tests)
     set_tests_properties(nexus_network_tests PROPERTIES TIMEOUT 30 SKIP_RETURN_CODE 77)
+
+    add_executable(nexus_mapping_tests tests/n_mapping_tests.c)
+    target_link_libraries(nexus_mapping_tests PRIVATE MergeSource::Options Nexus::Nexus)
+    add_test(NAME nexus_mapping_tests COMMAND nexus_mapping_tests)
+    set_tests_properties(nexus_mapping_tests PROPERTIES TIMEOUT 30 SKIP_RETURN_CODE 77)
 endif()
