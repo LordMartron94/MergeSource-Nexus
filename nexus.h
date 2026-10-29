@@ -1680,6 +1680,23 @@ Errors:
 extern void _nexus_memory_bytes_copy_untraced(const void *src_ptr, void *dest_ptr, uint_large size, const char *file, uint32 line);
 
 /*
+Summary: compares size bytes at left_ptr and right_ptr for equality.
+Description: compares raw bytes, including embedded zeros. Zero size returns
+  true. Identical and overlapping regions are allowed. Does not allocate or
+  invoke the memory trace hook; comparison time may depend on the contents.
+Params:
+  left_ptr   borrowed readable region of at least size bytes; never NULL
+  right_ptr  borrowed readable region of at least size bytes; never NULL
+Returns: true when every compared byte is equal, false otherwise.
+Ownership: both regions remain caller-owned; neither is modified or retained.
+Errors: NULL left_ptr or right_ptr is a programmer error (asserts), even
+  when size is zero.
+Thread-safety: safe for concurrent reads; callers synchronize writes.
+Complexity: O(size) worst-case time, O(1) space.
+*/
+extern boolean _nexus_memory_bytes_equal(const void *left_ptr, const void *right_ptr, uint_large size, const char *file, uint32 line);
+
+/*
 Summary: excludes ptr from nexus_memory_leak_report without unlinking it from the live list.
 Description: for state deliberately kept for the program's entire lifetime (the error pool,
   program_context) that must never be reported as a leak. The block still counts toward
@@ -1745,6 +1762,7 @@ extern void *_nexus_memory_hijack_calloc(uint_large count, uint_large size, cons
 #define nexus_memory_bytes_clear(ptr, size)                       _nexus_memory_bytes_set((ptr), (size), 0, __FILE__, __LINE__)
 #define nexus_memory_bytes_copy(src_ptr, dest_ptr, size)          _nexus_memory_bytes_copy((src_ptr), (dest_ptr), (size), __FILE__, __LINE__)
 #define nexus_memory_bytes_copy_untraced(src_ptr, dest_ptr, size) _nexus_memory_bytes_copy_untraced((src_ptr), (dest_ptr), (size), __FILE__, __LINE__)
+#define nexus_memory_bytes_equal(left_ptr, right_ptr, size)       _nexus_memory_bytes_equal((left_ptr), (right_ptr), (size), __FILE__, __LINE__)
 
 /*
 Summary: zeroes a whole object in place -- nexus_memory_bytes_clear over the object's own address and size.

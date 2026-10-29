@@ -3092,8 +3092,40 @@ static int nexus_test_data_pointer_size_assertions(void) {
 }
 #endif
 
+static int nexus_test_memory_bytes_equal(void) {
+  const byte left[]     = {0x00U, 0x80U, 0xffU, 0x42U};
+  byte       right[]    = {0x00U, 0x80U, 0xffU, 0x42U};
+  const byte repeated[] = {0x80U, 0x80U, 0x80U, 0x80U};
+  uint_large index;
+
+  if (!nexus_memory_bytes_equal(left, right, NEXUS_SIZEOF(left)) || !nexus_memory_bytes_equal(left, left, NEXUS_SIZEOF(left)) ||
+      !nexus_memory_bytes_equal(left + 1, right + 1, NEXUS_SIZEOF(left) - 1U) ||
+      !nexus_memory_bytes_equal(repeated, repeated + 1, NEXUS_SIZEOF(repeated) - 1U)) {
+    return nexus_test_fail(1401);
+  }
+
+  for (index = 0; index < NEXUS_SIZEOF(left); index++) {
+    right[index] ^= 1U;
+
+    if (nexus_memory_bytes_equal(left, right, NEXUS_SIZEOF(left)) || nexus_memory_bytes_equal(right, left, NEXUS_SIZEOF(left)) ||
+        !nexus_memory_bytes_equal(left, right, index)) {
+      return nexus_test_fail(1402);
+    }
+
+    right[index] = left[index];
+  }
+
+  return 0;
+}
+
 int main(void) {
   int result;
+
+  result = nexus_test_memory_bytes_equal();
+  if (result != 0) {
+    return result;
+  }
+
   result = nexus_test_errors_wrap();
   if (result != 0) {
     return result;

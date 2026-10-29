@@ -865,6 +865,14 @@ void _nexus_memory_bytes_copy_untraced(const void *src_ptr, void *dest_ptr, uint
   memcpy(dest_ptr, src_ptr, size);
 }
 
+boolean _nexus_memory_bytes_equal(const void *left_ptr, const void *right_ptr, uint_large size, const NEXUS_MAYBE_UNUSED char *file,
+                                  NEXUS_MAYBE_UNUSED uint32 line) {
+  NEXUS_PROGRAM_PRECONDITION(left_ptr != NULL, "Don't compare NULL (%s:%u)", file, line);
+  NEXUS_PROGRAM_PRECONDITION(right_ptr != NULL, "Don't compare NULL (%s:%u)", file, line);
+
+  return memcmp(left_ptr, right_ptr, size) == 0;
+}
+
 /* Formats bytes using the largest unit (B, KiB, MiB, GiB, TiB) for which the value is at
    least 1, matching the conventional file-browser presentation. */
 static NEXUS_MAYBE_UNUSED void _nexus_memory_format_bytes(char *buffer, int buffer_size, uint64 bytes) {
