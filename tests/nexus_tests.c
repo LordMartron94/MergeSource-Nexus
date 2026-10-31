@@ -3118,8 +3118,33 @@ static int nexus_test_memory_bytes_equal(void) {
   return 0;
 }
 
+static int nexus_test_memory_bytes_move(void) {
+  byte bytes[] = {0, 1, 2, 3, 4, 5};
+  const byte moved_right[] = {0, 0, 1, 2, 3, 4};
+  const byte moved_left[] = {0, 1, 2, 3, 4, 4};
+
+  nexus_memory_bytes_move(bytes, bytes + 1, 5);
+
+  if (!nexus_memory_bytes_equal(bytes, moved_right, NEXUS_SIZEOF(bytes)))
+    return nexus_test_fail(1403);
+
+  nexus_memory_bytes_move(bytes + 1, bytes, 5);
+  nexus_memory_bytes_move(bytes, bytes, NEXUS_SIZEOF(bytes));
+  nexus_memory_bytes_move(bytes, bytes + 1, 0);
+
+  if (!nexus_memory_bytes_equal(bytes, moved_left, NEXUS_SIZEOF(bytes)))
+    return nexus_test_fail(1404);
+
+  return 0;
+}
+
 int main(void) {
   int result;
+
+  result = nexus_test_memory_bytes_move();
+  if (result != 0) {
+    return result;
+  }
 
   result = nexus_test_memory_bytes_equal();
   if (result != 0) {

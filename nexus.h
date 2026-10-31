@@ -1664,6 +1664,15 @@ Errors:
 extern void _nexus_memory_bytes_copy(const void *src_ptr, void *dest_ptr, uint_large size, const char *file, uint32 line);
 
 /*
+Summary: moves size bytes from src_ptr to dest_ptr, permitting overlapping regions.
+Description: a checked, traced wrapper over memmove. Does not validate pointers
+  against tracked allocation bounds. Source and destination must both be non-NULL,
+  including for zero size. Identical regions are valid; no allocation is performed.
+Errors: NULL source/destination asserts in developer mode.
+*/
+extern void _nexus_memory_bytes_move(const void *src_ptr, void *dest_ptr, uint_large size, const char *file, uint32 line);
+
+/*
 Summary: like nexus_memory_bytes_copy, but never reports to the installed memory trace hook.
 Description: for internal bookkeeping copies that move an already-accounted-for, fixed-size
   element and aren't a new application-visible allocation event -- e.g. NexusChannel's ring-buffer
@@ -1761,6 +1770,7 @@ extern void *_nexus_memory_hijack_calloc(uint_large count, uint_large size, cons
 #define nexus_memory_bytes_set(ptr, size, value)                  _nexus_memory_bytes_set((ptr), (size), (value), __FILE__, __LINE__)
 #define nexus_memory_bytes_clear(ptr, size)                       _nexus_memory_bytes_set((ptr), (size), 0, __FILE__, __LINE__)
 #define nexus_memory_bytes_copy(src_ptr, dest_ptr, size)          _nexus_memory_bytes_copy((src_ptr), (dest_ptr), (size), __FILE__, __LINE__)
+#define nexus_memory_bytes_move(src_ptr, dest_ptr, size)          _nexus_memory_bytes_move((src_ptr), (dest_ptr), (size), __FILE__, __LINE__)
 #define nexus_memory_bytes_copy_untraced(src_ptr, dest_ptr, size) _nexus_memory_bytes_copy_untraced((src_ptr), (dest_ptr), (size), __FILE__, __LINE__)
 #define nexus_memory_bytes_equal(left_ptr, right_ptr, size)       _nexus_memory_bytes_equal((left_ptr), (right_ptr), (size), __FILE__, __LINE__)
 

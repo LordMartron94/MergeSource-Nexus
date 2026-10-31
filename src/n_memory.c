@@ -857,6 +857,20 @@ void _nexus_memory_bytes_copy(const void *src_ptr, void *dest_ptr, uint_large si
   memcpy(dest_ptr, src_ptr, size);
 }
 
+void _nexus_memory_bytes_move(const void *src_ptr, void *dest_ptr, uint_large size, const NEXUS_MAYBE_UNUSED char *file,
+                            NEXUS_MAYBE_UNUSED uint32 line) {
+  NEXUS_PROGRAM_PRECONDITION(src_ptr != NULL, "Don't move from NULL (%s:%u)", file, line);
+  NEXUS_PROGRAM_PRECONDITION(dest_ptr != NULL, "Don't move to NULL (%s:%u)", file, line);
+
+#if NEXUS_MEMORY_TRACING
+  if (memory_trace_fn != NULL) {
+    memory_trace_fn("Moving %llu bytes from pointer %p to %p at %s:%u", (uint64)size, src_ptr, dest_ptr, file, line);
+  }
+#endif
+
+  memmove(dest_ptr, src_ptr, size);
+}
+
 void _nexus_memory_bytes_copy_untraced(const void *src_ptr, void *dest_ptr, uint_large size, const NEXUS_MAYBE_UNUSED char *file,
                                        NEXUS_MAYBE_UNUSED uint32 line) {
   NEXUS_PROGRAM_PRECONDITION(src_ptr != NULL, "Don't copy from NULL (%s:%u)", file, line);
